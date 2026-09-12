@@ -213,6 +213,13 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ] + (['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),
+    # Deliberately loose. Buyers are coworkers: office wifi and mobile carriers put
+    # dozens of them behind one NAT'd IP, and an oversubscribed event means the link
+    # dropping into a WhatsApp group can produce 50 bookings from one apparent address in
+    # ten minutes. This stops a runaway script without ever stopping a crowd.
+    'DEFAULT_THROTTLE_RATES': {
+        'booking': '120/hour',
+    },
 }
 
 

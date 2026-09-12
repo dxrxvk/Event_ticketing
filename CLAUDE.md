@@ -108,7 +108,17 @@ Backend and frontend are deliberately separate deployments:
   The API is small and flat (`/api/health/`, `/api/availability/`, `POST /api/bookings/`,
   `POST /api/bookings/<reference>/confirm/`). `POST /api/bookings/` must return
   *everything* the pay screen needs in one response — no second round trip to a cold
-  backend.
+  backend (`pay_screen_payload()` in `tickets/serializers.py`).
+- **Booking rules live in `tickets/services.py`, not in views.** `create_booking()` and
+  `confirm_booking()` hold the lock and the state machine; views only translate exceptions
+  into responses. The race test drives the service directly with threads.
+- **Error contract** — every state conflict is `409` with `{"error": <code>}`:
+  `sold_out` (carries `remaining`), `sales_closed`, `booking_expired`,
+  `booking_cancelled`. The last three also carry `organiser_whatsapp` so the page can
+  offer a human. Validation is `400`, unknown reference `404`.
+- **`/api/health/` runs `SELECT 1` on purpose.** §7 says it touches nothing, but Neon
+  sleeps too — a ping that skips the database leaves Postgres cold for the first real
+  query, which happens inside the locked transaction in `POST /bookings/`.
 - **Vue 3 + Pinia static SPA on Cloudflare Pages.** Do **not** serve the frontend from
   Django templates: the page must be readable before the backend wakes. Event name, date,
   price and alias are baked in at build time; the first thing the mounted hook does is

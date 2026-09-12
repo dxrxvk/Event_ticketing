@@ -32,7 +32,16 @@ uv run python manage.py migrate
 
 ## 3. Verify
 
-Exercise whatever changed before committing. A quick shell round-trip is usually enough:
+First confirm the migrations actually match the models:
+
+```sh
+uv run python manage.py makemigrations --check --dry-run
+```
+
+"No changes detected" means they agree. Anything else means a model change was never
+turned into a migration, and the schema will drift from the code on deploy.
+
+Then exercise whatever changed before committing. A quick shell round-trip is usually enough:
 
 ```sh
 uv run python -c "

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+    <title>Event Tickets</title>
+    <meta name="description" content="Reserve your spot." />
+    <meta name="theme-color" content="#0d0c0f" />
+
+    <!--
+      OPEN GRAPH -- these must be edited before the link is shared anywhere.
+
+      They live in raw HTML because WhatsApp's crawler does not run JavaScript: anything
+      Vue sets on mount is invisible to it. og:url and og:image must be ABSOLUTE urls,
+      which means the Cloudflare Pages domain has to exist first -- deploy, then fill
+      these in. WhatsApp caches previews hard, so test against a throwaway path (?v=2)
+      rather than the real link.
+
+      og:image should be the poster once it exists. Recommended size 1200x630.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Event Tickets" />
+    <meta property="og:description" content="Reserve your spot." />
+    <meta property="og:url" content="https://REPLACE-ME.pages.dev/" />
+    <meta property="og:image" content="https://REPLACE-ME.pages.dev/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <style>
+      /* Painted before any CSS or JS loads, so a slow phone on the WhatsApp in-app
+         browser never flashes white. Mirrors --bg and --ink in styles/tokens.css. */
+      html { background: #0d0c0f; color: #f4f1ea; }
+      #boot {
+        display: flex; align-items: center; justify-content: center;
+        min-height: 100dvh; font: 500 0.875rem/1 system-ui, sans-serif;
+        letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.45;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"><div id="boot">Loading</div></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

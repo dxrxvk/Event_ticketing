@@ -249,6 +249,16 @@ class Guest(models.Model):
             )
 
 
+def fresh_pending_guest_filter(cutoff):
+    """Guests on a pending booking that is still inside its TTL.
+
+    The single definition of "pending but not yet expired". Anything that needs this --
+    seat counting, the export page's excluded count -- must use it rather than restating
+    the condition, or the two drift the day the TTL rule changes.
+    """
+    return Q(booking__status=Booking.Status.PENDING, booking__created_at__gt=cutoff)
+
+
 def live_guest_filter(cutoff):
     """Guests whose booking currently holds a seat.
 
@@ -260,7 +270,7 @@ def live_guest_filter(cutoff):
     """
     return (
         Q(booking__status__in=Booking.CONFIRMED_STATUSES)
-        | Q(booking__status=Booking.Status.PENDING, booking__created_at__gt=cutoff)
+        | fresh_pending_guest_filter(cutoff)
     )
 
 

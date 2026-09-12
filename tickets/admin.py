@@ -2,8 +2,11 @@ from datetime import timedelta
 
 from django.contrib import admin
 from django.db.models import BooleanField, Case, Count, Q, Value, When
+from django.shortcuts import render
+from django.urls import path
 from django.utils import timezone
 
+from . import exports
 from .models import Booking, EventSettings, Guest, seats_remaining, seats_taken
 from .money import format_ars
 
@@ -139,6 +142,47 @@ class BookingAdmin(admin.ModelAdmin):
             'fields': ('list_exported_at', 'notes'),
         }),
     )
+
+    def get_urls(self):
+        """Guest list exports, mounted under the booking changelist.
+
+        Custom routes must come BEFORE super().get_urls(): the default set ends in a
+        catch-all <path:object_id>/ that would otherwise match 'exports' and try to look
+        up a booking with that primary key.
+
+        admin_view() wraps each one in the staff-permission check, so these are never
+        reachable by an anonymous visitor who guesses the URL -- which matters, because
+        the organiser export carries every coworker's phone number.
+        """
+        custom = [
+            path('exports/', self.admin_site.admin_view(self.exports_index),
+                 name='tickets_exports'),
+            path('exports/venue.txt', self.admin_site.admin_view(self.export_venue_text),
+                 name='tickets_export_venue_txt'),
+            path('exports/venue.csv', self.admin_site.admin_view(self.export_venue_csv),
+                 name='tickets_export_venue_csv'),
+            path('exports/organiser.csv',
+                 self.admin_site.admin_view(self.export_organiser_csv),
+                 name='tickets_export_organiser_csv'),
+        ]
+        return custom + super().get_urls()
+
+    def exports_index(self, request):
+        return render(request, 'admin/tickets/exports.html', {
+            **self.admin_site.each_context(request),
+            'title': 'Guest list exports',
+            'confirmed_count': exports.confirmed_guests().count(),
+            'pending_count': exports.pending_guest_count(),
+        })
+
+    def export_venue_text(self, request):
+        return exports.venue_text_response()
+
+    def export_venue_csv(self, request):
+        return exports.venue_csv_response()
+
+    def export_organiser_csv(self, request):
+        return exports.organiser_csv_response()
 
     def get_queryset(self, request):
         """Annotate the seat-holding predicate and guest count in SQL.

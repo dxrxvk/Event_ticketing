@@ -4,11 +4,11 @@ from unittest import skipUnless
 
 from django.contrib.auth.models import User
 from django.db import connection
-from django.test import TestCase, TransactionTestCase
+from django.test import Client, TestCase, TransactionTestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from . import services
+from . import exports, services
 from .models import Booking, EventSettings, Guest, seats_taken
 from .money import format_ars
 
@@ -332,3 +332,119 @@ class CapacityRaceTest(TransactionTestCase):
         results = self._run(attempts=10, quantity=3)
         self.assertLessEqual(Guest.objects.count(), CAPACITY)
         self.assertEqual(sum(results), CAPACITY // 3)
+
+
+class ExportTests(TestCase):
+    """The venue list is the one artefact that leaves this system and reaches strangers,
+    so encoding, sorting and the status filter all get asserted."""
+
+    def setUp(self):
+        configure_event(capacity=50)
+        self.client = Client()
+        User.objects.create_superuser('org', 'o@example.com', 'pw')
+        self.client.login(username='org', password='pw')
+
+    @staticmethod
+    def _booking_with(names, status=Booking.Status.SELF_CONFIRMED, minutes_old=0):
+        booking = Booking.objects.create(
+            buyer_name=names[0], buyer_whatsapp='+5491100000002',
+            sender_account_name='M. Perez',
+            quantity=len(names), total_amount=PRICE * len(names), status=status,
+            confirmed_at=timezone.now() if status != Booking.Status.PENDING else None,
+        )
+        Guest.objects.bulk_create(Guest(booking=booking, full_name=n) for n in names)
+        if minutes_old:
+            Booking.objects.filter(pk=booking.pk).update(
+                created_at=timezone.now() - timedelta(minutes=minutes_old)
+            )
+        return booking
+
+    def test_accented_names_sort_in_place_not_after_z(self):
+        self._booking_with(['Zapata Ana', 'Álvarez Luis', 'Ñuñez Mia', 'Ibarra Bo'])
+        self.assertEqual(
+            exports.venue_names(),
+            ['Álvarez Luis', 'Ibarra Bo', 'Ñuñez Mia', 'Zapata Ana'],
+        )
+
+    def test_venue_list_excludes_pending(self):
+        self._booking_with(['Paid Person'])
+        self._booking_with(['Never Paid'], status=Booking.Status.PENDING)
+        self.assertEqual(exports.venue_names(), ['Paid Person'])
+
+    def test_venue_list_excludes_cancelled_and_expired(self):
+        self._booking_with(['Gone One'], status=Booking.Status.CANCELLED)
+        self._booking_with(['Gone Two'], status=Booking.Status.EXPIRED)
+        self._booking_with(['Still Here'], status=Booking.Status.VERIFIED)
+        self.assertEqual(exports.venue_names(), ['Still Here'])
+
+    def test_pending_count_is_surfaced(self):
+        self._booking_with(['Paid'])
+        self._booking_with(['Waiting One', 'Waiting Two'], status=Booking.Status.PENDING)
+        # A pending booking past the TTL no longer holds a seat, so it is not "waiting".
+        self._booking_with(['Long Gone'], status=Booking.Status.PENDING, minutes_old=90)
+        self.assertEqual(exports.pending_guest_count(), 2)
+
+    def test_venue_text_is_one_name_per_line(self):
+        self._booking_with(['Ana Perez', 'Beto Ñuñez'])
+        response = self.client.get('/admin/tickets/booking/exports/venue.txt')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.content.decode('utf-8').split('\n'),
+            ['Ana Perez', 'Beto Ñuñez'],
+        )
+        self.assertIn('lista-venue-', response['Content-Disposition'])
+
+    def test_venue_csv_carries_the_bom_excel_needs(self):
+        self._booking_with(['José Ñuñez'])
+        response = self.client.get('/admin/tickets/booking/exports/venue.csv')
+        # Without the BOM Excel reads the file as latin-1 and mangles every accent.
+        self.assertTrue(response.content.startswith(b'\xef\xbb\xbf'))
+        self.assertIn('José Ñuñez', response.content.decode('utf-8-sig'))
+
+    def test_venue_csv_carries_names_only(self):
+        self._booking_with(['Ana Perez'])
+        body = self.client.get(
+            '/admin/tickets/booking/exports/venue.csv'
+        ).content.decode('utf-8-sig')
+        # The venue must never receive contact details or payment status.
+        self.assertNotIn('+549', body)
+        self.assertNotIn('M. Perez', body)
+        self.assertIn('Full Name', body)
+
+    def test_organiser_csv_carries_contact_details_and_is_flagged_internal(self):
+        self._booking_with(['Ana Perez'])
+        response = self.client.get('/admin/tickets/booking/exports/organiser.csv')
+        body = response.content.decode('utf-8-sig')
+        self.assertIn('+549', body)
+        self.assertIn('M. Perez', body)
+        # Filename prefix makes it hard to attach to the venue's thread by mistake.
+        self.assertIn('INTERNO-', response['Content-Disposition'])
+
+    def test_venue_exports_stamp_list_exported_at(self):
+        booking = self._booking_with(['Ana Perez'])
+        self.assertIsNone(booking.list_exported_at)
+        self.client.get('/admin/tickets/booking/exports/venue.txt')
+        booking.refresh_from_db()
+        self.assertIsNotNone(booking.list_exported_at)
+
+    def test_organiser_export_does_not_stamp(self):
+        booking = self._booking_with(['Ana Perez'])
+        self.client.get('/admin/tickets/booking/exports/organiser.csv')
+        booking.refresh_from_db()
+        self.assertIsNone(booking.list_exported_at)
+
+    def test_index_reports_both_counts(self):
+        self._booking_with(['Paid One', 'Paid Two'])
+        self._booking_with(['Waiting'], status=Booking.Status.PENDING)
+        response = self.client.get('/admin/tickets/booking/exports/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['confirmed_count'], 2)
+        self.assertEqual(response.context['pending_count'], 1)
+
+    def test_exports_are_staff_only(self):
+        anon = Client()
+        for path in ('', 'venue.txt', 'venue.csv', 'organiser.csv'):
+            response = anon.get(f'/admin/tickets/booking/exports/{path}')
+            # The organiser export carries every coworker's phone number.
+            self.assertEqual(response.status_code, 302, path)
+            self.assertIn('/admin/login/', response['Location'])

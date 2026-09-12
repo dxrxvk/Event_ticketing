@@ -1,0 +1,37 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<h1>Guest list exports</h1>
+
+<p style="max-width: 46rem;">
+  <strong>{{ confirmed_count }}</strong> guest{{ confirmed_count|pluralize }} on the list
+  (self-confirmed and verified).
+  {% if pending_count %}
+    <br>
+    <strong>{{ pending_count }}</strong> more {{ pending_count|pluralize:"is,are" }} still
+    holding a seat but {{ pending_count|pluralize:"has,have" }} not confirmed payment, and
+    {{ pending_count|pluralize:"is,are" }} <em>not</em> included. Wait for them or chase
+    them before sending the list.
+  {% endif %}
+</p>
+
+<h2>For the venue</h2>
+<p style="max-width: 46rem;">Names only. No contact details, no payment status.</p>
+<ul>
+  <li><a href="venue.txt">Plain text, one name per line</a> — paste this into WhatsApp.</li>
+  <li><a href="venue.csv">CSV</a> — opens in Excel with accents intact.</li>
+</ul>
+
+<h2>For you</h2>
+<p style="max-width: 46rem;">
+  Contact details and payment status. Named <code>INTERNO-</code> so it is hard to attach
+  to the venue's thread by mistake. Delete it once reconciliation is done.
+</p>
+<ul>
+  <li><a href="organiser.csv">Organiser CSV</a></li>
+</ul>
+
+<p style="margin-top: 2rem;">
+  <a href="../">&larr; Back to bookings</a>
+</p>
+{% endblock %}

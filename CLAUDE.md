@@ -1,0 +1,136 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A single-event ticketing site for a private party (coworkers, Buenos Aires). No payment
+integration: buyers transfer money to a personal bank alias and self-confirm on the site.
+The system tracks headcount, enforces a guest-list cap, and exports CSVs.
+
+`event_ticketing.md` is the authoritative build plan — goals, non-goals, data model,
+business rules, API surface and a numbered build order. **Read it before writing code.**
+It also lists explicit non-goals (no payment provider, no QR codes, no email/SMS, no
+Docker/Celery/Redis, no buyer accounts). Don't add those.
+
+## Current state
+
+Step 1 of the build order is done: the `tickets` app exists, DRF and CORS are wired,
+config comes from the environment, and the server runs. Nothing from the data model
+(step 2 onward), the API or the frontend exists yet.
+
+- Dependencies: Django 6.1.1, `djangorestframework`, `django-cors-headers`,
+  `dj-database-url`, `python-dotenv`.
+- Config is read from `.env` locally (`config/settings.py` calls `load_dotenv`) and from
+  real environment variables on Render. `.env.example` is the committed template;
+  `.env` is gitignored. `SECRET_KEY` is required and raises `ImproperlyConfigured` when
+  missing, so a fresh clone must copy the template first.
+- `DEBUG` defaults to **False**; local `.env` turns it on. `ALLOWED_HOSTS` and
+  `CORS_ALLOWED_ORIGINS` are comma-separated env vars that default to localhost only
+  under `DEBUG` and to empty otherwise.
+- DB is still local SQLite. `DATABASE_URL` overrides it — that is step 10 (Neon).
+- `main.py` is an unused leftover from `uv init`.
+- `manage.py check --deploy` still reports the HTTPS/HSTS/secure-cookie warnings. Those
+  belong to step 11; `SECURE_SSL_REDIRECT` in particular needs `SECURE_PROXY_SSL_HEADER`
+  set correctly for Render or it causes redirect loops. `mail.E001` is silenced on
+  purpose — this project sends no email by design.
+- The event constants from section 4 of the plan (name, date, venue, price, alias,
+  deadline) are still TBD and unset. Capacity belongs in the `EventSettings` model;
+  `ALIAS` should come from the environment, not the repo.
+
+## Commands
+
+Dependencies are managed with `uv` (lockfile: `uv.lock`). Prefix Django commands with
+`uv run` — there is no need to activate `.venv` manually.
+
+```sh
+cp .env.example .env                  # first run only, then fill in SECRET_KEY
+uv sync                               # install/refresh deps from the lockfile
+uv add <package>                      # add a dependency (updates pyproject + lock)
+
+uv run python manage.py runserver
+uv run python manage.py makemigrations
+uv run python manage.py migrate
+uv run python manage.py createsuperuser
+uv run python manage.py shell
+
+uv run python manage.py test                                  # all tests
+uv run python manage.py test tickets                          # one app
+uv run python manage.py test tickets.tests.BookingTests        # one class
+uv run python manage.py test tickets.tests.BookingTests.test_x # one test
+
+uv run python manage.py check --deploy                        # pre-deploy audit (step 11)
+```
+
+There is no linter or formatter configured.
+
+## Invariants that are easy to get wrong
+
+These are the decisions the plan is emphatic about; breaking them silently breaks the
+event.
+
+- **Money is integer cents.** Never float.
+- **The price is flat: 5.000 per ticket, for everyone.** `total_amount = TICKET_PRICE * quantity`,
+  nothing added. §5's `cents_code` and §6's "Unique cents" scheme are **dropped** — see
+  the plan critique. Never reintroduce per-buyer amount variation, including §6's
+  `5.001,XX` second-base-price fallback.
+- **Who paid is identified by three signals**, not by the amount: `reference` (shown to
+  the buyer to paste into the transfer's *concepto* field, if their bank has one),
+  `sender_account_name` (asked on the form, because the account holder is often not the
+  buyer), and `confirmed_at` (time proximity to the credit). Reconciliation is an
+  assisted-manual checklist, not an exact-amount matcher.
+- **`self_confirmed` and `verified` are different states**, and neither is a boolean.
+  `pending` is the only status that ever expires. `verified` is set by hand once the
+  organiser sees the deposit in their statement.
+- **Capacity is counted over `Guest` rows**, not bookings, across `pending`/`self_confirmed`/`verified`.
+  Enforce inside `transaction.atomic()` with `select_for_update()` on the `EventSettings`
+  row. **That lock is a silent no-op on SQLite** — Django omits `FOR UPDATE` from the SQL
+  and raises nothing, even with `nowait=True` — so any concurrency test is meaningless
+  until the database is Postgres.
+- **Expiry is a query predicate, not a state mutation.** Count taken as
+  `verified + self_confirmed + (pending AND created_at > now() - TTL)`. A sweep that only
+  runs when requests arrive cannot free seats once "sold out" has stopped the traffic.
+  The admin sweep action stays, but only as cosmetic status tidying.
+- **Never accept `quantity` from the client** — derive it from `len(guests)`. Capacity is
+  counted over Guest rows, so drift between the two sells seats that aren't paid for.
+- **CSVs are written `utf-8-sig`** or Excel mangles every á, é and ñ. Sort on an
+  accent-folded key too, or Álvarez and Ñuñez land after Zapata. Two separate exports: the
+  venue gets names only, the organiser gets contact details and status.
+- **`reference` is an unguessable short token** (≥64 bits), never the sequential PK.
+- **CORS whitelists the exact frontend origin**, not `*`. Organiser views are
+  `@staff_member_required` — the DRF default in this project is `AllowAny`.
+
+## Architecture
+
+Backend and frontend are deliberately separate deployments:
+
+- **Django + DRF on Render free tier.** Spins down after 15 min idle, ~50-60s cold start.
+  The API is small and flat (`/api/health/`, `/api/availability/`, `POST /api/bookings/`,
+  `POST /api/bookings/<reference>/confirm/`). `POST /api/bookings/` must return
+  *everything* the pay screen needs in one response — no second round trip to a cold
+  backend.
+- **Vue 3 + Pinia static SPA on Cloudflare Pages.** Do **not** serve the frontend from
+  Django templates: the page must be readable before the backend wakes. Event name, date,
+  price and alias are baked in at build time; the first thing the mounted hook does is
+  ping `/api/health/` and discard the result so the dyno wakes while the visitor types.
+- **Postgres on Neon**, via `dj-database-url`. Not Render's free Postgres, which is
+  deleted after 30 days.
+- **Django admin is the real back office** — the event should be runnable entirely by hand
+  from it. Only two custom organiser views on top: reconciliation (a checklist of
+  unverified bookings with sender name, party size and confirm time, ticked off against a
+  bank statement) and the CSV/plain-text exports.
+
+## Conventions
+
+- **All UI copy is English.** This overrides §10's "Page must be Spanish (Argentina) —
+  use `vos`, not `tú`" and the Spanish strings in §9 and §10.5. The **amount** is still
+  displayed Argentine-style (`5.000`, dot as thousands separator) because it goes into an
+  Argentine bank's amount field — do not "fix" it to `5,000` to match the English copy.
+  `concepto` stays Spanish when referring to the bank field, since that is what the
+  banking apps label it.
+- OG tags (`og:title`, `og:description`, `og:image`, `og:url`, `og:type`, `twitter:card`)
+  go directly in `index.html`. WhatsApp's crawler does not run JS, so anything set on
+  mount is invisible to it.
+- Personal data: names, WhatsApp numbers, optional emails. No DNI. Never commit
+  production data or CSV exports (`*.csv` belongs in `.gitignore`). Argentina's law 25.326
+  applies — contact columns get deleted after reconciliation.

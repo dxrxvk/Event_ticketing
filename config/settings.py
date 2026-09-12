@@ -10,22 +10,41 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Local development reads config from .env; Render injects the same names as real
+# environment variables. Copy .env.example to .env to get started.
+load_dotenv(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^xq66!%(@+7v&s68avyghfb%uh$goqgjjb9@$2(!jt0l5i$$_c'
+def env_bool(name, default=False):
+    return os.environ.get(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def env_list(name, default=''):
+    return [item.strip() for item in os.environ.get(name, default).split(',') if item.strip()]
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = env_bool('DEBUG')
 
-ALLOWED_HOSTS = []
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    raise ImproperlyConfigured(
+        'SECRET_KEY is not set. Copy .env.example to .env for local development, '
+        'or set it in the hosting environment.'
+    )
+
+ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', 'localhost,127.0.0.1' if DEBUG else '')
 
 
 # Application definition
@@ -37,11 +56,15 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'mcm'
+    'corsheaders',
+    'rest_framework',
+    'tickets',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # Must come before CommonMiddleware, which can generate responses itself.
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -73,11 +96,14 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+# DATABASE_URL points at Neon Postgres in every deployed environment; the SQLite
+# fallback exists only so a fresh clone runs before step 10 of event_ticketing.md.
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        conn_max_age=600,
+        conn_health_checks=True,
+    ),
 }
 
 
@@ -105,7 +131,10 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# The event is in Buenos Aires. Timestamps are stored as UTC (USE_TZ), but everything a
+# human reads -- admin, CSV exports, the list deadline -- must be local, or created_at
+# will not line up with the bank statement during reconciliation.
+TIME_ZONE = 'America/Argentina/Buenos_Aires'
 
 USE_I18N = True
 
@@ -126,3 +155,35 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+# This project sends no email at all (see 'Non-goals' in event_ticketing.md): buyer
+# confirmation happens over WhatsApp by hand. mail.E001 objects to the console backend
+# under DEBUG=False, which would otherwise block `manage.py check --deploy`.
+SILENCED_SYSTEM_CHECKS = ['mail.E001']
+
+
+# Django REST Framework
+# Buyers have no accounts, so the booking endpoints are open. Session auth covers the
+# organiser's own views, which sit behind the admin login.
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ] + (['rest_framework.renderers.BrowsableAPIRenderer'] if DEBUG else []),
+}
+
+
+# CORS
+# The SPA is served from a different origin (Cloudflare Pages), so the exact origins are
+# whitelisted. Never '*'.
+
+CORS_ALLOWED_ORIGINS = env_list(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,http://127.0.0.1:5173' if DEBUG else '',
+)

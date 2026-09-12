@@ -9,5 +9,8 @@ dependencies = [
     "django>=6.1.1",
     "django-cors-headers>=4.9.0",
     "djangorestframework>=3.18.1",
+    "gunicorn>=26.2.0",
+    "psycopg[binary]>=3.2",
     "python-dotenv>=1.2.3",
+    "whitenoise>=6.12.0",
 ]

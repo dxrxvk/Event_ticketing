@@ -63,6 +63,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise serves static files in production. Django itself will not when
+    # DEBUG=False, and there is no nginx in front on Render -- without this the admin
+    # renders with no CSS at all. Must sit directly after SecurityMiddleware.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     # Must come before CommonMiddleware, which can generate responses itself.
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -145,6 +149,39 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+# collectstatic gathers here at build time; WhiteNoise serves from it at runtime.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
+
+
+# HTTPS, for Render only
+# Render terminates TLS at its load balancer and forwards plain HTTP to the app. Without
+# SECURE_PROXY_SSL_HEADER, Django sees an insecure request, redirects to HTTPS, and the
+# balancer forwards HTTP again -- an infinite redirect loop. The two settings belong
+# together; never enable SECURE_SSL_REDIRECT without the proxy header.
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 3600
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
+# Django rejects cross-origin POSTs -- including the admin login form on a Render
+# hostname -- unless the origin is listed here. The failure message ("CSRF verification
+# failed") does not point at this setting, so it is an expensive one to omit.
+CSRF_TRUSTED_ORIGINS = [
+    f'https://{host}' for host in ALLOWED_HOSTS if host not in ('localhost', '127.0.0.1')
+]
 
 
 # Email

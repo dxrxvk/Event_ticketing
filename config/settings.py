@@ -46,6 +46,12 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = env_list('ALLOWED_HOSTS', 'localhost,127.0.0.1' if DEBUG else '')
 
+# Render injects its own hostname. Reading it here means the service passes its health
+# check on the first deploy with nothing copied into the dashboard by hand.
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME and RENDER_EXTERNAL_HOSTNAME not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
 
 # Application definition
 
@@ -182,6 +188,21 @@ if not DEBUG:
 CSRF_TRUSTED_ORIGINS = [
     f'https://{host}' for host in ALLOWED_HOSTS if host not in ('localhost', '127.0.0.1')
 ]
+
+# Django's default sends DisallowedHost to mail_admins, so a failing health check shows
+# up in the Render log as a bare 400 with no hint of which Host header was refused.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'loggers': {
+        'django.security.DisallowedHost': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
 
 
 # Email

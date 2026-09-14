@@ -29,7 +29,8 @@ services:
       - key: DATABASE_URL
         sync: false
 
-      # The Render hostname, e.g. tickets-xxxx.onrender.com. Also feeds
+      # Optional. settings.py reads RENDER_EXTERNAL_HOSTNAME itself, so the
+      # onrender.com hostname needs no entry here; only a custom domain does. Also feeds
       # CSRF_TRUSTED_ORIGINS, without which admin login fails on CSRF.
       - key: ALLOWED_HOSTS
         sync: false

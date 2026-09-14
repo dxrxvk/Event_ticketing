@@ -13,7 +13,7 @@
 
       They live in raw HTML because WhatsApp's crawler does not run JavaScript: anything
       Vue sets on mount is invisible to it. og:url and og:image must be ABSOLUTE urls,
-      which means the Cloudflare Pages domain has to exist first -- deploy, then fill
+      which means the Cloudflare domain has to exist first -- deploy, then fill
       these in. WhatsApp caches previews hard, so test against a throwaway path (?v=2)
       rather than the real link.
 
@@ -22,8 +22,8 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Event Tickets" />
     <meta property="og:description" content="Reserve your spot." />
-    <meta property="og:url" content="https://REPLACE-ME.pages.dev/" />
-    <meta property="og:image" content="https://REPLACE-ME.pages.dev/og.jpg" />
+    <meta property="og:url" content="https://event-ticketing.dhruxk.workers.dev/" />
+    <meta property="og:image" content="https://event-ticketing.dhruxk.workers.dev/og.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
 
     <style>

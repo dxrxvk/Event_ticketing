@@ -43,10 +43,15 @@ still placeholders.
   `dist`, build-time env `VITE_API_BASE=https://tickets-6cko.onrender.com`. With the root
   directory unset the build finds `pyproject.toml`, runs `uv sync` and deploys nothing.
 - `main.py` is an unused leftover from `uv init`.
-- **Still to do:** `CORS_ALLOWED_ORIGINS` on Render = `https://event-ticketing.dhruxk.workers.dev`
-  (without it the page renders but every API call is blocked by the browser), filling in
-  `EventSettings` (capacity is `0`, so the site reports sold out until it is set) and
-  `frontend/src/event.config.js`, and the poster plus `og.jpg` in `frontend/public/`.
+- **CORS is already set** on Render: `CORS_ALLOWED_ORIGINS` =
+  `https://event-ticketing.dhruxk.workers.dev`. A preflight from that origin comes back
+  with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
+- **Still to do:** filling in `EventSettings` (capacity is `0`, so `/api/availability/`
+  currently answers `sold_out: true`) and `frontend/src/event.config.js`, and the poster
+  plus `og.jpg` in `frontend/public/`. **`og.jpg` is not optional the way the poster is** —
+  the Worker serves the SPA fallback for unknown paths, so a missing `/og.jpg` returns
+  `200 text/html` instead of `404`. The link preview silently has no image, and WhatsApp
+  caches that result hard.
 
 ## Commands
 

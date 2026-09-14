@@ -16,7 +16,8 @@ Docker/Celery/Redis, no buyer accounts). Don't add those.
 ## Current state
 
 Backend is deployed on Render at `tickets-6cko.onrender.com` against Neon Postgres; the
-frontend base is built but not yet deployed.
+frontend is deployed at `https://event-ticketing.dhruxk.workers.dev`. Event details are
+still placeholders.
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
@@ -29,15 +30,23 @@ frontend base is built but not yet deployed.
   gunicorn). The health check is `/admin/login/`; Render sends its own hostname as the
   `Host` header and `settings.py` reads it from `RENDER_EXTERNAL_HOSTNAME`, so
   `ALLOWED_HOSTS` on Render is only needed for a custom domain. `DATABASE_URL` on Render
-  is Neon's **pooled** host (`-pooler` in the hostname).
+  is Neon's **pooled** host (`-pooler` in the hostname). Render (Oregon) and Neon
+  (`us-west-2`) are deliberately in the same region: with the database in São Paulo every
+  query cost ~180ms and admin pages run dozens. gunicorn runs `--threads 4`; one sync
+  worker made simultaneous requests queue into 502s.
 - **Neon has two connection strings; use the right one.** Local `.env` must use the
   **direct** host: the test runner's `CREATE`/`DROP DATABASE` fails through the pooler
   ("being accessed by other users") and leaves a stray `test_neondb` behind. Leaving
   `DATABASE_URL` blank still gives SQLite for a fresh clone.
+- **Frontend deployed** as a Cloudflare Worker with static assets (`event-ticketing`),
+  Git-connected to `main`: root directory `frontend`, build `npm run build`, output
+  `dist`, build-time env `VITE_API_BASE=https://tickets-6cko.onrender.com`. With the root
+  directory unset the build finds `pyproject.toml`, runs `uv sync` and deploys nothing.
 - `main.py` is an unused leftover from `uv init`.
-- **Still to do:** a superuser on Neon, Cloudflare Pages for `frontend/`, then
-  `CORS_ALLOWED_ORIGINS` on Render set to that exact origin, and filling in
-  `EventSettings` plus `frontend/src/event.config.js` with the real event details.
+- **Still to do:** `CORS_ALLOWED_ORIGINS` on Render = `https://event-ticketing.dhruxk.workers.dev`
+  (without it the page renders but every API call is blocked by the browser), filling in
+  `EventSettings` (capacity is `0`, so the site reports sold out until it is set) and
+  `frontend/src/event.config.js`, and the poster plus `og.jpg` in `frontend/public/`.
 
 ## Commands
 
@@ -120,8 +129,9 @@ Backend and frontend are deliberately separate deployments:
 - **`/api/health/` runs `SELECT 1` on purpose.** §7 says it touches nothing, but Neon
   sleeps too — a ping that skips the database leaves Postgres cold for the first real
   query, which happens inside the locked transaction in `POST /bookings/`.
-- **Vue 3 static SPA on Cloudflare Pages** (`frontend/`). Do **not** serve it from Django
-  templates: the page must be readable before the backend wakes. The first thing the
+- **Vue 3 static SPA on Cloudflare** (`frontend/`), as a Worker with static assets, which
+  is what Cloudflare's Create flow now defaults to; Pages would behave the same. Do **not**
+  serve it from Django templates: the page must be readable before the backend wakes. The first thing the
   mounted hook does is ping `/api/health/` and discard the result, so the dyno wakes while
   the visitor types.
   - **No Pinia**, contra §3 — one composable (`src/composables/useBooking.js`) holds the

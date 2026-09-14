@@ -20,8 +20,13 @@ frontend base is built but not yet deployed.
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 41 tests (`uv run python manage.py test tickets`). 3 of those skip on SQLite by
-  design — see the capacity invariant below — and run for real on Postgres.
+  and 72 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
+  admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
+  the capacity invariant below — and run for real on Postgres.
+- **Load script:** `scripts/loadtest.py` (stdlib only) fires concurrent requests at a
+  running server and exits non-zero on any 5xx or oversell. Reads are safe against any
+  URL; `--write` refuses non-local hosts unless `--allow-remote-writes` is passed.
 - **Frontend done:** `frontend/` holds a Vite + Vue 3 SPA covering hero, form, pay screen,
   confirmed screen and the sold-out / closed / expired states. `npm run dev` proxies
   `/api` to Django on :8000, so CORS does not exist in development.
@@ -59,6 +64,8 @@ uv run python manage.py test                                  # all tests
 uv run python manage.py test tickets                          # one app
 uv run python manage.py test tickets.tests.BookingTests        # one class
 uv run python manage.py test tickets.tests.BookingTests.test_x # one test
+uv run python manage.py test tickets.test_robustness          # bursts, races, hostile input
+uv run python scripts/loadtest.py --base-url https://tickets-6cko.onrender.com  # read-only load
 
 uv run python manage.py check --deploy                        # pre-deploy audit (step 11)
 ```
@@ -100,6 +107,10 @@ event.
 - **`reference` is an unguessable short token** (≥64 bits), never the sequential PK.
 - **CORS whitelists the exact frontend origin**, not `*`. Organiser views are
   `@staff_member_required` — the DRF default in this project is `AllowAny`.
+- **Throttling needs `@throttle_scope('booking')` on the view.** `ScopedRateThrottle`
+  reads the scope from the view, not from the throttle class; without the decorator it
+  lets everything through and raises nothing. `ThrottleTests` asserts the 121st request
+  from one address is a 429, so a regression fails loudly.
 
 ## Architecture
 

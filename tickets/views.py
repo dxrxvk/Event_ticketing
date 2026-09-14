@@ -1,6 +1,6 @@
 from django.db import connection
 from rest_framework import status
-from rest_framework.decorators import api_view, throttle_classes
+from rest_framework.decorators import api_view, throttle_classes, throttle_scope
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -10,7 +10,13 @@ from .serializers import BookingCreateSerializer, pay_screen_payload
 
 
 class BookingRateThrottle(ScopedRateThrottle):
-    scope = 'booking'
+    """Rate-limits the two write endpoints under the 'booking' rate in settings.py.
+
+    ScopedRateThrottle reads its scope from the *view* (`view.throttle_scope`), not from
+    the throttle class -- setting `scope` here does nothing and the throttle silently
+    lets everything through. Hence the @throttle_scope decorator on each view below;
+    tickets/test_robustness.py asserts the 121st request from one address is a 429.
+    """
 
 
 def _error(code, message, http_status=status.HTTP_409_CONFLICT, **extra):
@@ -42,6 +48,7 @@ def availability(request):
 
 @api_view(['POST'])
 @throttle_classes([BookingRateThrottle])
+@throttle_scope('booking')
 def create_booking(request):
     serializer = BookingCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -73,6 +80,7 @@ def create_booking(request):
 
 @api_view(['POST'])
 @throttle_classes([BookingRateThrottle])
+@throttle_scope('booking')
 def confirm_booking(request, reference):
     try:
         booking = services.confirm_booking(reference)

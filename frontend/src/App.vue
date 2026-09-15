@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 
 import { warmUp } from './api.js'
 import AvailabilityBadge from './components/AvailabilityBadge.vue'
@@ -24,60 +24,68 @@ onMounted(() => {
 })
 
 const soldOutLink = whatsappLink(`Hi! Is there any chance of a spot for ${event.name}?`)
+
+// Presentation, not booking state: the page opens on the poster alone and a tap turns it
+// over. Meanwhile warmUp() above has already started waking the backend.
+const covered = ref(Boolean(event.posterUrl))
 </script>
 
 <template>
   <div class="app">
     <main class="page">
-      <EventHero />
+      <EventHero :covered="covered" @open="covered = false" />
 
-      <div class="app__status">
-        <AvailabilityBadge :availability="availability" />
-      </div>
+      <Transition name="fade">
+        <div v-if="!covered">
+          <div class="app__status">
+            <AvailabilityBadge :availability="availability" />
+          </div>
 
-      <StatusNotice v-if="notice" :notice="notice" class="app__notice" />
+          <StatusNotice v-if="notice" :notice="notice" class="app__notice" />
 
-      <div class="app__body">
-        <Transition name="fade" mode="out-in">
-          <!-- Sold out and closed replace the form entirely: offering a form that cannot
-               succeed is worse than saying so plainly. -->
-          <section v-if="step === 'form' && !canBook" key="closed" class="closed card">
-            <h2 class="closed__heading">
-              {{ soldOut ? 'Sold out' : 'Bookings are closed' }}
-            </h2>
-            <p class="closed__body">
-              {{ soldOut
-                ? 'Every spot is taken. If someone drops out, the organiser will know first.'
-                : 'The guest list has gone to the venue, so no new bookings can be taken.' }}
-            </p>
-            <a v-if="soldOutLink" class="closed__link" :href="soldOutLink" target="_blank" rel="noopener">
-              Ask to be kept in mind
-            </a>
-          </section>
+          <div class="app__body">
+            <Transition name="fade" mode="out-in">
+              <!-- Sold out and closed replace the form entirely: offering a form that
+                   cannot succeed is worse than saying so plainly. -->
+              <section v-if="step === 'form' && !canBook" key="closed" class="closed card">
+                <h2 class="closed__heading">
+                  {{ soldOut ? 'Sold out' : 'Bookings are closed' }}
+                </h2>
+                <p class="closed__body">
+                  {{ soldOut
+                    ? 'Every spot is taken. If someone drops out, the organiser will know first.'
+                    : 'The guest list has gone to the venue, so no new bookings can be taken.' }}
+                </p>
+                <a v-if="soldOutLink" class="closed__link" :href="soldOutLink" target="_blank" rel="noopener">
+                  Ask to be kept in mind
+                </a>
+              </section>
 
-          <BookingForm
-            v-else-if="step === 'form'"
-            key="form"
-            :submitting="submitting"
-            :field-errors="fieldErrors"
-            @submit="submit"
-          />
+              <BookingForm
+                v-else-if="step === 'form'"
+                key="form"
+                :submitting="submitting"
+                :field-errors="fieldErrors"
+                @submit="submit"
+              />
 
-          <PayPanel
-            v-else-if="step === 'pay'"
-            key="pay"
-            :booking="booking"
-            :confirming="confirming"
-            @confirm="confirm"
-          />
+              <PayPanel
+                v-else-if="step === 'pay'"
+                key="pay"
+                :booking="booking"
+                :confirming="confirming"
+                @confirm="confirm"
+              />
 
-          <ConfirmedPanel v-else key="done" :booking="booking" />
-        </Transition>
-      </div>
+              <ConfirmedPanel v-else key="done" :booking="booking" />
+            </Transition>
+          </div>
 
-      <footer class="footer">
-        <p>{{ event.name }}</p>
-      </footer>
+          <footer class="footer">
+            <p>{{ event.name }}</p>
+          </footer>
+        </div>
+      </Transition>
     </main>
   </div>
 </template>

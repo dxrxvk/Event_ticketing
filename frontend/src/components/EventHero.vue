@@ -1,60 +1,117 @@
 <script setup>
-import { event, eventDateParts, formatPesos } from '../event.config.js'
+import { nextTick, ref, watch } from 'vue'
 
-const when = eventDateParts()
+import { event } from '../event.config.js'
+import EventDetails from './EventDetails.vue'
+
+const props = defineProps({
+  // True while the page shows only the poster. Meaningless without a poster.
+  covered: { type: Boolean, default: false },
+})
+const emit = defineEmits(['open'])
+
+const hasPoster = Boolean(event.posterUrl)
+const details = ref(null)
+
+watch(
+  () => props.covered,
+  async (covered, was) => {
+    if (was && !covered) {
+      await nextTick()
+      details.value?.focusTitle()
+    }
+  },
+)
 </script>
 
 <template>
-  <header class="hero">
+  <header class="hero" :class="{ 'hero--covered': hasPoster && covered }">
     <!--
-      The poster is an upgrade, not a dependency. Until posterUrl is set this block does
-      not render at all -- no placeholder box, no empty frame. The page is designed to
-      look finished without it.
+      The poster is an upgrade, not a dependency. Without one there is no cover and no
+      card: the details stand alone and the page is designed to look finished that way.
     -->
-    <figure v-if="event.posterUrl" class="hero__poster">
-      <img
-        :src="event.posterUrl"
-        :alt="`Poster for ${event.name}`"
-        width="1000"
-        height="1400"
-      />
-    </figure>
+    <EventDetails v-if="!hasPoster" />
 
-    <p class="eyebrow hero__kicker">You're invited</p>
-    <h1 class="hero__title">{{ event.name }}</h1>
-    <p v-if="event.tagline" class="hero__tagline">{{ event.tagline }}</p>
+    <div v-else class="flip">
+      <div class="flip__card" :class="{ 'is-open': !covered }">
+        <div class="flip__face flip__front" :inert="!covered" :aria-hidden="!covered">
+          <button
+            type="button"
+            class="flip__tap"
+            :aria-label="`Open the booking page for ${event.name}`"
+            @click="emit('open')"
+          >
+            <figure class="hero__poster">
+              <img
+                :src="event.posterUrl"
+                :alt="`Poster for ${event.name}`"
+                width="1000"
+                height="1400"
+              />
+            </figure>
+          </button>
+        </div>
 
-    <dl class="facts">
-      <div class="facts__row">
-        <dt class="eyebrow">When</dt>
-        <dd>
-          {{ when.day }}
-          <span class="facts__sub">{{ when.time }}</span>
-        </dd>
+        <div class="flip__face flip__back" :inert="covered" :aria-hidden="covered">
+          <EventDetails ref="details" />
+        </div>
       </div>
-      <div class="facts__row">
-        <dt class="eyebrow">Where</dt>
-        <dd>
-          {{ event.venue }}
-          <span v-if="event.venueArea" class="facts__sub">{{ event.venueArea }}</span>
-        </dd>
-      </div>
-      <div class="facts__row">
-        <dt class="eyebrow">Price</dt>
-        <dd>
-          {{ formatPesos(event.pricePerTicket) }}
-          <span class="facts__sub">per person</span>
-        </dd>
-      </div>
-    </dl>
+
+      <p v-if="covered" class="eyebrow hero__hint">Tap the poster to book</p>
+    </div>
   </header>
 </template>
 
 <style scoped>
 .hero { padding-top: var(--space-7); }
 
+/* First screen: nothing but the poster and the hint, centred. */
+.hero--covered {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-block: var(--space-6);
+}
+
+.flip { perspective: 1600px; }
+
+/* Both faces share one grid cell, so the card is as tall as the poster and the details
+   sit centred in that same box once it has turned. */
+.flip__card {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform var(--duration-flip) var(--ease);
+}
+.flip__card.is-open { transform: rotateY(180deg); }
+
+.flip__face {
+  grid-area: 1 / 1;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.flip__back {
+  transform: rotateY(180deg);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.flip__tap {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-lg);
+}
+.flip__tap:focus-visible { box-shadow: var(--focus-ring); }
+
 .hero__poster {
-  margin: 0 0 var(--space-6);
+  margin: 0;
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--line);
@@ -65,47 +122,25 @@ const when = eventDateParts()
    the rendered box on that ratio at any width. */
 .hero__poster img { width: 100%; height: auto; aspect-ratio: 1000 / 1400; }
 
-.hero__kicker { color: var(--accent-strong); }
-
-.hero__title {
-  margin-top: var(--space-3);
-  font-family: var(--font-display);
-  font-stretch: 125%;   /* Archivo's width axis -- matches the poster's wide title */
-  font-size: var(--text-display);
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
-  font-weight: 700;
-  text-wrap: balance;
-}
-
-.hero__tagline {
-  margin-top: var(--space-3);
-  font-size: var(--text-lg);
+.hero__hint {
+  margin-top: var(--space-5);
+  text-align: center;
   color: var(--ink-muted);
-  text-wrap: pretty;
+  animation: hint-pulse 2s var(--ease) infinite;
 }
 
-.facts {
-  margin-top: var(--space-6);
-  border-top: 1px solid var(--line);
+@keyframes hint-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
-.facts__row {
-  display: grid;
-  grid-template-columns: 4.5rem 1fr;
-  gap: var(--space-4);
-  align-items: baseline;
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.facts__row dd { margin: 0; font-weight: 600; font-size: var(--text-md); }
-
-.facts__sub {
-  display: block;
-  margin-top: 2px;
-  font-weight: 400;
-  font-size: var(--text-sm);
-  color: var(--ink-muted);
+/* No rotation for people who have asked for less motion: the faces crossfade. */
+@media (prefers-reduced-motion: reduce) {
+  .flip__card, .flip__card.is-open, .flip__back { transform: none; }
+  .flip__face { transition: opacity 200ms var(--ease); }
+  .flip__back { opacity: 0; }
+  .flip__card.is-open .flip__front { opacity: 0; }
+  .flip__card.is-open .flip__back { opacity: 1; }
+  .hero__hint { animation: none; opacity: 1; }
 }
 </style>

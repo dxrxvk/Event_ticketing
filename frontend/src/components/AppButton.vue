@@ -44,13 +44,7 @@ defineProps({
 
 .btn:disabled { cursor: not-allowed; opacity: 0.55; }
 
-/* The outline is not decoration: --accent is only 2.69:1 against the yellow page,
-   under the 3:1 WCAG floor for a component boundary. Near-black ink carries it. */
-.btn--primary {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--ink);
-}
+.btn--primary { background: var(--accent); color: var(--accent-ink); }
 .btn--primary:hover:not(:disabled) { filter: brightness(1.07); }
 
 .btn--ghost {

@@ -58,10 +58,12 @@ const when = eventDateParts()
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--line);
-  /* --bg, not --surface: the poster's own field is this same yellow, so an off-white
-     card behind it would show as a halo on every edge while the image loads. */
-  background: var(--bg);
+  background: var(--surface);
 }
+
+/* The attributes give the browser the 5:7 ratio before the file arrives; this keeps
+   the rendered box on that ratio at any width. */
+.hero__poster img { width: 100%; height: auto; aspect-ratio: 1000 / 1400; }
 
 .hero__kicker { color: var(--accent-strong); }
 

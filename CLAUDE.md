@@ -143,6 +143,11 @@ Backend and frontend are deliberately separate deployments:
   the visitor types.
   - **No Pinia**, contra §3 — one composable (`src/composables/useBooking.js`) holds the
     whole flow. Four screens and one booking object do not need a store.
+  - **Poster-first cover.** With `posterUrl` set, the page opens on the poster alone and
+    a tap flips it (`EventHero.vue`) to the details (`EventDetails.vue`); the badge and
+    form fade in below only then. `warmUp()` still fires on mount, so the backend wakes
+    while people look at the poster. The cover is a local `ref` in `App.vue`, not booking
+    state. With no poster there is no cover and no card.
   - **Event details are baked in** via `src/event.config.js` (name, date, venue, price,
     `posterUrl`, WhatsApp), because §10.1 requires the page to render before any API call.
     The **payment destination is not** — alias, CVU and account holder come from the API

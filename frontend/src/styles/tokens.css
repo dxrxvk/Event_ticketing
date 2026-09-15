@@ -92,6 +92,7 @@
   /* ---- MOTION -------------------------------------------------------------- */
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --duration: 240ms;
+  --duration-flip: 600ms;   /* the poster turning over; slow enough to read as a flip */
 
   /* ---- FOCUS --------------------------------------------------------------- */
   /* Every interactive element uses :focus-visible with this. Never remove it --
@@ -104,5 +105,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --duration: 0.01ms; }
+  :root { --duration: 0.01ms; --duration-flip: 0.01ms; }
 }

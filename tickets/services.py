@@ -161,16 +161,18 @@ def set_song_requests(reference, songs):
     """Replace a booking's song requests with `songs` (already stripped, at most three).
 
     Only confirmed bookings may add songs: the form appears once payment is confirmed,
-    and a form-filler who never paid should not steer the playlist. No lock -- nothing
-    here competes for capacity.
+    and a form-filler who never paid should not steer the playlist.
     """
-    booking = Booking.objects.get(reference=reference)
-    if booking.status == Booking.Status.CANCELLED:
-        raise BookingCancelled('This booking was cancelled.')
-    if booking.status not in Booking.CONFIRMED_STATUSES:
-        raise BookingNotConfirmed('Confirm your payment first, then add songs.')
-
     with transaction.atomic():
+        # Lock the booking row, not for capacity but for the replace itself: two saves
+        # for the same reference overlapping during a cold start would both delete and
+        # then both insert position 1, and the unique constraint would surface as a 500.
+        booking = Booking.objects.select_for_update().get(reference=reference)
+        if booking.status == Booking.Status.CANCELLED:
+            raise BookingCancelled('This booking was cancelled.')
+        if booking.status not in Booking.CONFIRMED_STATUSES:
+            raise BookingNotConfirmed('Confirm your payment first, then add songs.')
+
         booking.song_requests.all().delete()
         SongRequest.objects.bulk_create(
             SongRequest(booking=booking, position=position, text=text)

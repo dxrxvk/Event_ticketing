@@ -16,6 +16,12 @@ class BookingRateThrottle(ScopedRateThrottle):
     scope = 'booking'
 
 
+class SongRequestRateThrottle(ScopedRateThrottle):
+    # Its own bucket: the booking rate is sized for two requests per buyer behind one
+    # office IP, and an unbounded "save songs" button must not spend that budget.
+    scope = 'song_requests'
+
+
 def _error(code, message, http_status=status.HTTP_409_CONFLICT, **extra):
     """409 rather than 400 for every state conflict below: the request was well formed,
     the server just will not accept it in its current state."""
@@ -96,7 +102,7 @@ def confirm_booking(request, reference):
 
 
 @api_view(['POST'])
-@throttle_classes([BookingRateThrottle])
+@throttle_classes([SongRequestRateThrottle])
 def song_requests(request, reference):
     serializer = SongRequestsSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)

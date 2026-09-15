@@ -156,6 +156,20 @@ def organiser_csv_response():
     )
 
 
+def dedupe_key(text):
+    """Case- and accent-insensitive key that keeps non-Latin letters.
+
+    fold_accents() is for sorting Latin names and throws away everything non-ASCII,
+    which would fold every Korean or Cyrillic request to the same empty key and drop all
+    but the first from the playlist.
+    """
+    decomposed = unicodedata.normalize('NFKD', text)
+    without_marks = ''.join(
+        ch for ch in decomposed if unicodedata.category(ch) != 'Mn'
+    )
+    return ' '.join(without_marks.casefold().split())
+
+
 def playlist_lines():
     """Song requests from confirmed bookings, in arrival order, without repeats.
 
@@ -169,7 +183,7 @@ def playlist_lines():
         .filter(booking__status__in=Booking.CONFIRMED_STATUSES)
         .order_by('created_at', 'position', 'id')
     ):
-        key = fold_accents(song.text)
+        key = dedupe_key(song.text)
         if key in seen:
             continue
         seen.add(key)

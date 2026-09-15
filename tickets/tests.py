@@ -3,6 +3,7 @@ from datetime import timedelta
 from unittest import skipUnless
 
 from django.contrib.auth.models import User
+from django.core.exceptions import ValidationError
 from django.db import connection
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
@@ -142,8 +143,24 @@ class CreateBookingTests(TestCase):
     def test_revolut_block_is_absent_until_configured(self):
         self.assertIsNone(self.post().json()['revolut'])
 
+    def test_revolut_block_is_absent_while_half_configured(self):
+        # A tag with no price would otherwise publish "EUR 0.00" to every buyer.
+        configure_event(revolut_tag='dhruvk')
+        self.assertIsNone(self.post().json()['revolut'])
+        configure_event(revolut_tag='dhruvk', revolut_currency='EUR', revolut_price_cents=0)
+        self.assertIsNone(self.post(guests=guest_payload(3)).json()['revolut'])
+
+    def test_half_configured_revolut_is_rejected_in_the_admin_form(self):
+        row = configure_event()
+        row.revolut_tag = 'dhruvk'
+        with self.assertRaises(ValidationError):
+            row.full_clean()
+        row.revolut_currency, row.revolut_price_cents = 'EUR', 500
+        row.full_clean()
+
     def test_revolut_block_multiplies_the_flat_price_by_party_size(self):
-        configure_event(revolut_tag='dhruvk', revolut_currency='EUR', revolut_price_cents=500)
+        # Pasted straight from Revolut, @ and trailing space included, lower-case currency.
+        configure_event(revolut_tag=' @dhruvk ', revolut_currency='eur', revolut_price_cents=500)
         body = self.post(guests=guest_payload(3)).json()
         self.assertEqual(body['revolut'], {
             'tag': 'dhruvk',
@@ -539,6 +556,16 @@ class ExportTests(TestCase):
             exports.playlist_lines(),
             ['Drake - One Dance', 'Rosalía - Despechá', 'Bad Bunny - Tití'],
         )
+
+    def test_playlist_keeps_distinct_non_latin_requests(self):
+        # An ASCII-only fold would turn every Korean or Cyrillic title into the same
+        # empty key and drop all but the first.
+        paid = self._booking_with(['Paid Person'])
+        services.set_song_requests(
+            paid.reference, ['방탄소년단 - 봄날', '아이유 - 밤편지', 'Земфира - Искала'],
+        )
+        self.assertEqual(len(exports.playlist_lines()), 3)
+        self.assertEqual(exports.dedupe_key('Rosalía - DESPECHÁ'), 'rosalia - despecha')
 
     def test_playlist_text_download(self):
         paid = self._booking_with(['Paid Person'])

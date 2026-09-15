@@ -56,8 +56,16 @@ def song_requests_payload(song_requests):
 
 
 def revolut_payload(booking, event_settings):
-    """The second destination, or None until the organiser sets a Revtag."""
-    if not event_settings.revolut_tag:
+    """The second destination, or None until tag, currency and price are all set.
+
+    Gating on the tag alone would publish "EUR 0.00" to every buyer the moment the
+    organiser saves a half-filled admin form.
+    """
+    if not (
+        event_settings.revolut_tag
+        and event_settings.revolut_currency
+        and event_settings.revolut_price_cents
+    ):
         return None
     amount = event_settings.revolut_price_cents * booking.quantity
     return {

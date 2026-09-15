@@ -8,7 +8,8 @@ from django.utils import timezone
 
 from . import exports
 from .models import (
-    Booking, EventSettings, Guest, SongRequest, seats_remaining, seats_taken,
+    MAX_SONG_REQUESTS, Booking, EventSettings, Guest, SongRequest, seats_remaining,
+    seats_taken,
 )
 from .money import format_ars
 
@@ -70,6 +71,9 @@ class GuestInline(admin.TabularInline):
 class SongRequestInline(admin.TabularInline):
     model = SongRequest
     extra = 0
+    # The API enforces three; without this the admin could save a fourth that the
+    # buyer's next save silently wipes.
+    max_num = MAX_SONG_REQUESTS
     fields = ('position', 'text')
 
 

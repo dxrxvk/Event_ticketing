@@ -87,10 +87,13 @@ These are the decisions the plan is emphatic about; breaking them silently break
 event.
 
 - **Money is integer cents.** Never float.
-- **The price is flat: 5.000 per ticket, for everyone.** `total_amount = TICKET_PRICE * quantity`,
+- **The price is flat: 5.000 per ticket, for everyone** paying in pesos, plus optionally
+  one flat Revolut price per ticket in one foreign currency (this overrides §2's single
+  price line the way §3 and §10 are overridden). `total_amount = TICKET_PRICE * quantity`,
   nothing added. §5's `cents_code` and §6's "Unique cents" scheme are **dropped** — see
   the plan critique. Never reintroduce per-buyer amount variation, including §6's
-  `5.001,XX` second-base-price fallback.
+  `5.001,XX` fallback: two flat prices on two rails, never a price that depends on who is
+  paying.
 - **Who paid is identified by three signals**, not by the amount: `reference` (shown to
   the buyer to paste into the transfer's *concepto* field, if their bank has one),
   `sender_account_name` (asked on the form, because the account holder is often not the

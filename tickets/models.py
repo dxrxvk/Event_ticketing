@@ -56,8 +56,8 @@ class EventSettings(models.Model):
         help_text='Used for wa.me links on the sold-out and error screens.',
     )
 
-    # Second destination for guests paying from outside Argentina. One flat figure per
-    # ticket in one currency -- a second base price, never per-person variation. A blank
+    # Second destination for guests paying from outside Argentina: one flat figure per
+    # ticket in one currency, on a second rail. Still never per-person variation. A blank
     # tag hides the whole block on the pay screen.
     revolut_tag = models.CharField(
         max_length=50,
@@ -97,9 +97,25 @@ class EventSettings(models.Model):
     def __str__(self):
         return self.event_name
 
+    def clean(self):
+        super().clean()
+        self._normalise_revolut()
+        if self.revolut_tag and not (self.revolut_currency and self.revolut_price_cents):
+            raise ValidationError(
+                'Revolut needs a currency and a price above zero. Leave the tag blank to '
+                'hide Revolut instead.'
+            )
+
+    def _normalise_revolut(self):
+        # Revolut shows the tag as "@name"; accept it pasted that way, and with the
+        # trailing space a paste often carries. A config slip must stay an admin edit.
+        self.revolut_tag = self.revolut_tag.strip().lstrip('@')
+        self.revolut_currency = self.revolut_currency.strip().upper()
+
     def save(self, *args, **kwargs):
         # Enforce the singleton: there is only ever one event.
         self.pk = 1
+        self._normalise_revolut()
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):

@@ -107,7 +107,13 @@ async function saveSongs() {
     songs.value = [0, 1, 2].map((i) => texts[i] ?? '')
     songsSaved.value = true
   } catch (error) {
-    songsError.value = error.message
+    if (error.code === 'booking_cancelled' || error.code === 'booking_not_confirmed') {
+      // The booking itself is the problem, not the songs: surface it like every other
+      // dead end, with the organiser's WhatsApp, rather than as a line under the form.
+      notice.value = noticeFrom(error)
+    } else {
+      songsError.value = error.message
+    }
   } finally {
     songsSaving.value = false
   }

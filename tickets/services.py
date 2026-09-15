@@ -7,7 +7,7 @@ concurrency test can fire real threads at create_booking() without going through
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Booking, EventSettings, Guest, seats_taken
+from .models import Booking, EventSettings, Guest, SongRequest, seats_taken
 
 
 class BookingError(Exception):
@@ -34,6 +34,10 @@ class BookingExpired(BookingError):
 
 class BookingCancelled(BookingError):
     code = 'booking_cancelled'
+
+
+class BookingNotConfirmed(BookingError):
+    code = 'booking_not_confirmed'
 
 
 def _find_live_duplicate(event_settings, buyer_whatsapp, quantity):
@@ -151,6 +155,30 @@ def confirm_booking(reference):
         status=Booking.Status.EXPIRED
     )
     raise BookingExpired('This booking expired and the event is now full.')
+
+
+def set_song_requests(reference, songs):
+    """Replace a booking's song requests with `songs` (already stripped, at most three).
+
+    Only confirmed bookings may add songs: the form appears once payment is confirmed,
+    and a form-filler who never paid should not steer the playlist.
+    """
+    with transaction.atomic():
+        # Lock the booking row, not for capacity but for the replace itself: two saves
+        # for the same reference overlapping during a cold start would both delete and
+        # then both insert position 1, and the unique constraint would surface as a 500.
+        booking = Booking.objects.select_for_update().get(reference=reference)
+        if booking.status == Booking.Status.CANCELLED:
+            raise BookingCancelled('This booking was cancelled.')
+        if booking.status not in Booking.CONFIRMED_STATUSES:
+            raise BookingNotConfirmed('Confirm your payment first, then add songs.')
+
+        booking.song_requests.all().delete()
+        SongRequest.objects.bulk_create(
+            SongRequest(booking=booking, position=position, text=text)
+            for position, text in enumerate(songs, start=1)
+        )
+    return list(booking.song_requests.all())
 
 
 def availability(event_settings=None):

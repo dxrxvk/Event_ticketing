@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
-from .models import MAX_TICKETS_PER_BOOKING
-from .money import format_ars
+from .models import MAX_SONG_REQUESTS, MAX_TICKETS_PER_BOOKING
+from .money import format_ars, format_minor_units
 
 
 class GuestInputSerializer(serializers.Serializer):
@@ -37,6 +37,46 @@ class BookingCreateSerializer(serializers.Serializer):
         return value
 
 
+class SongRequestsSerializer(serializers.Serializer):
+    """Input for POST /api/bookings/<reference>/songs/. Replaces the whole list."""
+
+    songs = serializers.ListField(
+        child=serializers.CharField(max_length=120, allow_blank=True),
+        max_length=MAX_SONG_REQUESTS,
+        allow_empty=True,
+    )
+
+    def validate_songs(self, value):
+        # Blank slots are the empty inputs on the form, not requests.
+        return [song.strip() for song in value if song.strip()]
+
+
+def song_requests_payload(song_requests):
+    return {'songs': [{'text': song.text} for song in song_requests]}
+
+
+def revolut_payload(booking, event_settings):
+    """The second destination, or None until tag, currency and price are all set.
+
+    Gating on the tag alone would publish "EUR 0.00" to every buyer the moment the
+    organiser saves a half-filled admin form.
+    """
+    if not (
+        event_settings.revolut_tag
+        and event_settings.revolut_currency
+        and event_settings.revolut_price_cents
+    ):
+        return None
+    amount = event_settings.revolut_price_cents * booking.quantity
+    return {
+        'tag': event_settings.revolut_tag,
+        'link': f'https://revolut.me/{event_settings.revolut_tag}',
+        'currency': event_settings.revolut_currency,
+        'amount_cents': amount,
+        'amount_display': format_minor_units(amount, event_settings.revolut_currency),
+    }
+
+
 def pay_screen_payload(booking, event_settings):
     """Everything the pay screen needs, in one response.
 
@@ -58,4 +98,5 @@ def pay_screen_payload(booking, event_settings):
         'account_holder_name': event_settings.account_holder_name,
         'organiser_whatsapp': event_settings.organiser_whatsapp,
         'list_deadline': event_settings.list_deadline,
+        'revolut': revolut_payload(booking, event_settings),
     }

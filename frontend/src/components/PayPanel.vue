@@ -34,7 +34,8 @@ const limitHelpLink = computed(() => {
       -->
       <p class="amount__value">{{ booking.amount_display }}</p>
       <p class="amount__note">
-        Send this as <strong>one single transfer</strong> for the full amount.
+        Send this as <strong>one single transfer</strong> for the full
+        amount<template v-if="booking.revolut">, by either method below</template>.
       </p>
     </div>
 
@@ -58,12 +59,23 @@ const limitHelpLink = computed(() => {
       </p>
     </div>
 
+    <div v-if="booking.revolut" class="card">
+      <p class="eyebrow">Paying from outside Argentina?</p>
+      <p class="revolut__lead">
+        Send <strong>{{ booking.revolut.amount_display }}</strong> via Revolut instead.
+      </p>
+      <CopyField label="Revtag" :value="`@${booking.revolut.tag}`" mono />
+      <a class="revolut__link" :href="booking.revolut.link" target="_blank" rel="noopener">
+        Open in Revolut
+      </a>
+    </div>
+
     <div class="card">
       <CopyField
         label="Reference"
         :value="booking.reference"
         mono
-        hint="If your banking app has a reference or note field, paste this in. It helps match your payment."
+        hint="If your app has a reference or note field, paste this in. It helps match your payment."
       />
     </div>
 
@@ -119,5 +131,17 @@ const limitHelpLink = computed(() => {
   border-top: 1px solid var(--line);
   font-size: var(--text-base);
   color: var(--ink-muted);
+}
+
+.revolut__lead {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-4);
+  color: var(--ink-muted);
+}
+
+.revolut__link {
+  display: inline-block;
+  margin-top: var(--space-4);
+  font-weight: 600;
 }
 </style>

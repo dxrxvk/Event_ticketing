@@ -13,6 +13,7 @@ from django.utils import timezone
 REFERENCE_BYTES = 9
 
 MAX_TICKETS_PER_BOOKING = 8
+MAX_SONG_REQUESTS = 3
 
 
 def generate_reference():
@@ -55,6 +56,25 @@ class EventSettings(models.Model):
         help_text='Used for wa.me links on the sold-out and error screens.',
     )
 
+    # Second destination for guests paying from outside Argentina: one flat figure per
+    # ticket in one currency, on a second rail. Still never per-person variation. A blank
+    # tag hides the whole block on the pay screen.
+    revolut_tag = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text='Revtag without the @. Blank hides Revolut on the pay screen.',
+    )
+    revolut_currency = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text='ISO code the Revolut price is in, e.g. EUR.',
+    )
+    revolut_price_cents = models.PositiveIntegerField(
+        default=0,
+        help_text='Integer minor units in that currency: 500 = 5.00. Flat for everyone '
+                  'paying via Revolut.',
+    )
+
     pending_ttl_minutes = models.PositiveIntegerField(
         default=45,
         help_text='How long a pending booking holds its seats.',
@@ -77,9 +97,25 @@ class EventSettings(models.Model):
     def __str__(self):
         return self.event_name
 
+    def clean(self):
+        super().clean()
+        self._normalise_revolut()
+        if self.revolut_tag and not (self.revolut_currency and self.revolut_price_cents):
+            raise ValidationError(
+                'Revolut needs a currency and a price above zero. Leave the tag blank to '
+                'hide Revolut instead.'
+            )
+
+    def _normalise_revolut(self):
+        # Revolut shows the tag as "@name"; accept it pasted that way, and with the
+        # trailing space a paste often carries. A config slip must stay an admin edit.
+        self.revolut_tag = self.revolut_tag.strip().lstrip('@')
+        self.revolut_currency = self.revolut_currency.strip().upper()
+
     def save(self, *args, **kwargs):
         # Enforce the singleton: there is only ever one event.
         self.pk = 1
+        self._normalise_revolut()
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -247,6 +283,34 @@ class Guest(models.Model):
                 f'Event is at capacity ({event_settings.capacity}). Cancel or expire a '
                 f'booking before adding another guest.'
             )
+
+
+class SongRequest(models.Model):
+    """A buyer's optional song request, at most MAX_SONG_REQUESTS per booking.
+
+    Stored exactly as typed. Anything that ends up on a real playlist is a layer on top
+    of this row, so a request is never lost to a flaky third party.
+    """
+
+    booking = models.ForeignKey(
+        Booking,
+        related_name='song_requests',
+        on_delete=models.CASCADE,
+    )
+    position = models.PositiveSmallIntegerField()
+    text = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('position',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['booking', 'position'], name='songrequest_unique_position',
+            ),
+        ]
+
+    def __str__(self):
+        return self.text
 
 
 def fresh_pending_guest_filter(cutoff):

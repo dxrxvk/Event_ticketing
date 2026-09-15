@@ -6,11 +6,20 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from . import services
 from .models import Booking, EventSettings
-from .serializers import BookingCreateSerializer, pay_screen_payload
+from .serializers import (
+    BookingCreateSerializer, SongRequestsSerializer, pay_screen_payload,
+    song_requests_payload,
+)
 
 
 class BookingRateThrottle(ScopedRateThrottle):
     scope = 'booking'
+
+
+class SongRequestRateThrottle(ScopedRateThrottle):
+    # Its own bucket: the booking rate is sized for two requests per buyer behind one
+    # office IP, and an unbounded "save songs" button must not spend that budget.
+    scope = 'song_requests'
 
 
 def _error(code, message, http_status=status.HTTP_409_CONFLICT, **extra):
@@ -90,3 +99,25 @@ def confirm_booking(request, reference):
         )
 
     return Response(pay_screen_payload(booking, EventSettings.load()))
+
+
+@api_view(['POST'])
+@throttle_classes([SongRequestRateThrottle])
+def song_requests(request, reference):
+    serializer = SongRequestsSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    try:
+        saved = services.set_song_requests(reference, serializer.validated_data['songs'])
+    except Booking.DoesNotExist:
+        return _error(
+            'not_found', 'No booking with that reference.',
+            http_status=status.HTTP_404_NOT_FOUND,
+        )
+    except (services.BookingCancelled, services.BookingNotConfirmed) as exc:
+        return _error(
+            exc.code, str(exc),
+            organiser_whatsapp=EventSettings.load().organiser_whatsapp,
+        )
+
+    return Response(song_requests_payload(saved))

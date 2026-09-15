@@ -15,7 +15,9 @@ import unicodedata
 from django.http import HttpResponse
 from django.utils import timezone
 
-from .models import Booking, EventSettings, Guest, fresh_pending_guest_filter
+from .models import (
+    Booking, EventSettings, Guest, SongRequest, fresh_pending_guest_filter,
+)
 from .money import format_ars
 
 
@@ -152,3 +154,48 @@ def organiser_csv_response():
         ORGANISER_HEADER,
         organiser_rows(),
     )
+
+
+def dedupe_key(text):
+    """Case- and accent-insensitive key that keeps non-Latin letters.
+
+    fold_accents() is for sorting Latin names and throws away everything non-ASCII,
+    which would fold every Korean or Cyrillic request to the same empty key and drop all
+    but the first from the playlist.
+    """
+    decomposed = unicodedata.normalize('NFKD', text)
+    without_marks = ''.join(
+        ch for ch in decomposed if unicodedata.category(ch) != 'Mn'
+    )
+    return ' '.join(without_marks.casefold().split())
+
+
+def playlist_lines():
+    """Song requests from confirmed bookings, in arrival order, without repeats.
+
+    Three people asking for the same track is one line on the playlist. The key folds
+    case and accents, so 'Rosalía' and 'rosalia' are the same request.
+    """
+    seen = set()
+    lines = []
+    for song in (
+        SongRequest.objects
+        .filter(booking__status__in=Booking.CONFIRMED_STATUSES)
+        .order_by('created_at', 'position', 'id')
+    ):
+        key = dedupe_key(song.text)
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(song.text)
+    return lines
+
+
+def playlist_text_response():
+    # No stamp: this never goes to the venue either.
+    body = '\n'.join(playlist_lines())
+    response = HttpResponse(
+        body.encode('utf-8'), content_type='text/plain; charset=utf-8'
+    )
+    response['Content-Disposition'] = f'attachment; filename="playlist-{_today()}.txt"'
+    return response

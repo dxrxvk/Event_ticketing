@@ -1,11 +1,28 @@
 <script setup>
+import { ref, watch } from 'vue'
+
+import AppButton from './AppButton.vue'
 import { event, eventDateParts } from '../event.config.js'
 
-defineProps({
+const props = defineProps({
   booking: { type: Object, required: true },
+  songs: { type: Array, required: true },
+  songsSaving: { type: Boolean, default: false },
+  songsSaved: { type: Boolean, default: false },
+  songsError: { type: String, default: '' },
 })
+const emit = defineEmits(['update:songs', 'save-songs'])
 
 const when = eventDateParts()
+
+// "Saved" only until the next keystroke, so the button always says what it will do.
+const touched = ref(false)
+watch(() => props.songsSaved, (saved) => { if (saved) touched.value = false })
+
+function setSong(index, value) {
+  touched.value = true
+  emit('update:songs', props.songs.map((song, i) => (i === index ? value : song)))
+}
 </script>
 
 <template>
@@ -38,8 +55,34 @@ const when = eventDateParts()
 
     <p class="field-hint">
       The organiser checks payments by hand, so it may be a day or two before yours is
-      ticked off. Nothing more is needed from you — just turn up.
+      ticked off. That's it from you — unless you want a say in the music.
     </p>
+
+    <form class="songs" @submit.prevent="emit('save-songs')">
+      <div>
+        <p class="eyebrow">Song requests <span class="muted">(optional)</span></p>
+        <p class="songs__lead">Up to three. Artist and title works best.</p>
+      </div>
+
+      <label v-for="(song, index) in songs" :key="index" class="field">
+        <span class="visually-hidden">Song {{ index + 1 }}</span>
+        <input
+          class="field-input"
+          type="text"
+          maxlength="120"
+          autocomplete="off"
+          :placeholder="`Song ${index + 1}: Artist – Title`"
+          :value="song"
+          @input="setSong(index, $event.target.value)"
+        />
+      </label>
+
+      <p v-if="songsError" class="field-error" role="alert">{{ songsError }}</p>
+
+      <AppButton type="submit" variant="ghost" :loading="songsSaving">
+        {{ songsSaving ? 'Saving…' : songsSaved && !touched ? 'Saved' : 'Save songs' }}
+      </AppButton>
+    </form>
   </section>
 </template>
 
@@ -77,4 +120,18 @@ const when = eventDateParts()
 
 .summary__row dd { margin: 0; font-weight: 600; }
 .summary__mono { font-family: var(--font-mono); font-size: var(--text-base); }
+
+.songs {
+  text-align: left;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--line);
+}
+
+.songs__lead {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.songs > * + * { margin-top: var(--space-3); }
 </style>

@@ -240,6 +240,9 @@ REST_FRAMEWORK = {
     # ten minutes. This stops a runaway script without ever stopping a crowd.
     'DEFAULT_THROTTLE_RATES': {
         'booking': '120/hour',
+        # Separate bucket so an unbounded "save songs" button cannot spend the booking
+        # budget of everyone behind the same office IP.
+        'song_requests': '120/hour',
     },
 }
 

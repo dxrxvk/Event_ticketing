@@ -63,3 +63,11 @@ export function confirmBooking(reference) {
     method: 'POST',
   })
 }
+
+/** Replaces the booking's song requests. Blank entries are dropped server-side. */
+export function saveSongRequests(reference, songs) {
+  return request(`/api/bookings/${encodeURIComponent(reference)}/songs/`, {
+    method: 'POST',
+    body: { songs },
+  })
+}

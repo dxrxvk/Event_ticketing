@@ -12,11 +12,13 @@
 export const TIMEZONE = 'America/Argentina/Buenos_Aires'
 
 export const event = {
-  name: 'Event Name',
-  tagline: 'An evening with the people you already like.',
+  name: 'Multiculture Mixer',
+  tagline: 'A night of global genres, sounds and vibes. Rep your flag, share your culture, make new friends.',
 
   // ISO 8601 with the Buenos Aires offset (-03:00).
-  dateISO: '2026-09-26T21:00:00-03:00',
+  // Date is 03/10 off the poster, read day-first: 3 October 2026.
+  // THE TIME IS A PLACEHOLDER -- the poster does not state one. Confirm 21:00.
+  dateISO: '2026-10-03T21:00:00-03:00',
 
   venue: 'Venue Name',
   venueArea: 'Neighbourhood, Buenos Aires',
@@ -26,9 +28,10 @@ export const event = {
   pricePerTicket: 5000,
 
   // '' means no poster panel renders and the hero stands on its own -- the page is
-  // designed to look finished without it. Drop the file into public/ and set this to
-  // '/poster.jpg' when it arrives.
-  posterUrl: '',
+  // designed to look finished without it.
+  // public/poster.webp is the 6.1MB source PNG at 1000px wide, ~145KB. The separate
+  // public/og.jpg is the WhatsApp preview crop and is referenced from index.html only.
+  posterUrl: '/poster.webp',
 
   // Digits only, no + or spaces. Used for wa.me links on every dead end.
   organiserWhatsapp: '',

@@ -16,8 +16,9 @@ Docker/Celery/Redis, no buyer accounts). Don't add those.
 ## Current state
 
 Backend is deployed on Render at `tickets-6cko.onrender.com` against Neon Postgres; the
-frontend is deployed at `https://event-ticketing.dhruxk.workers.dev`. Event details are
-still placeholders.
+frontend is deployed at `https://event-ticketing.dhruxk.workers.dev`. The page carries the
+real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time in
+`event.config.js` is a placeholder until confirmed.
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
@@ -46,12 +47,13 @@ still placeholders.
 - **CORS is already set** on Render: `CORS_ALLOWED_ORIGINS` =
   `https://event-ticketing.dhruxk.workers.dev`. A preflight from that origin comes back
   with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
-- **Still to do:** filling in `EventSettings` (capacity is `0`, so `/api/availability/`
-  currently answers `sold_out: true`) and `frontend/src/event.config.js`, and the poster
-  plus `og.jpg` in `frontend/public/`. **`og.jpg` is not optional the way the poster is** —
-  the Worker serves the SPA fallback for unknown paths, so a missing `/og.jpg` returns
-  `200 text/html` instead of `404`. The link preview silently has no image, and WhatsApp
-  caches that result hard.
+- **Still to do:** filling in `EventSettings` in the admin (capacity is `0`, so
+  `/api/availability/` currently answers `sold_out: true`; alias, CVU, account holder and
+  WhatsApp are blank) and confirming the start time in `frontend/src/event.config.js`.
+  The poster (`public/poster.webp`) and preview crop (`public/og.jpg`, 1200x630) are in.
+  Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
+  missing `/og.jpg` returns `200 text/html` instead of `404`, the preview silently has no
+  image, and WhatsApp caches that result hard.
 
 ## Commands
 

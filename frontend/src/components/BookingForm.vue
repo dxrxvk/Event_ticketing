@@ -171,7 +171,7 @@ function onSubmit() {
 .total__value { margin-left: auto; font-size: var(--text-xl); font-weight: 700; }
 .total__note { font-size: var(--text-sm); color: var(--ink-muted); }
 
-.form__deadline { color: var(--accent); }
+.form__deadline { color: var(--accent-strong); }
 
 .summary-error {
   padding: var(--space-4);

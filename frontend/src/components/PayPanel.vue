@@ -92,11 +92,7 @@ const limitHelpLink = computed(() => {
 .amount {
   padding: var(--space-5);
   text-align: center;
-  /* --surface, not --accent-soft: a 14% magenta wash over the yellow page composites
-     to a muddy peach and drops the amount to ~3.6:1. This is the number people type
-     into a banking app, so it gets the highest-contrast surface on the page (6.5:1)
-     and keeps the magenta as a border. */
-  background: var(--surface);
+  background: var(--accent-soft);
   border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
 }

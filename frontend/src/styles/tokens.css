@@ -9,43 +9,39 @@
    --yellow). If the next poster turns out teal, a variable called --magenta holding a
    teal value is a lie that outlives everyone who remembers why.
 
-   CURRENT: "Multiculture Mixer" -- hot magenta on a yellow paper field.
-   #FF007A and #F8D839 are sampled straight off the poster file.
-
-   The one thing the poster cannot dictate: magenta on yellow is 2.69:1. That is fine
-   for a printed headline and illegal for anything you have to read. So the accent is
-   split -- --accent is the poster magenta and is only ever a FILL or a BORDER, and
-   --accent-strong is the darkened version used when magenta has to be TEXT. Body copy
-   is near-black ink straight on the yellow field (13.4:1); --surface is reserved for
-   cards and --surface-raised for inputs, which is what breaks up the yellow.
+   CURRENT: "Multiculture Mixer". The poster is hot magenta on yellow paper, but the
+   page stays on the dark base: the poster sits in it like a print on a black wall,
+   and its yellow (#F8D839, sampled off the file) does all the accent work. Yellow on
+   near-black is ~13:1 both as text and as a fill, so --accent and --accent-strong hold
+   the same value here; the split exists because a light palette needs two. The
+   poster's magenta (#FF007A) is ~4.5:1 on this background, fine for a headline and
+   marginal for anything small, so it is not used for text.
 
    Every pair below is measured, not eyeballed. If you change one, re-measure.
    ============================================================================ */
 
 :root {
   /* ---- COLOUR (swap these) ------------------------------------------------ */
-  --bg: #F8D839;                /* poster paper yellow */
-  --surface: #FFFDF5;           /* cards -- calm zones for reading and typing */
-  --surface-raised: #FFFFFF;    /* inputs, sitting on a card */
+  --bg: #0d0c0f;
+  --surface: #17161b;           /* cards */
+  --surface-raised: #1f1e25;    /* inputs, sitting on a card */
 
-  --ink: #14100A;               /* 13.4:1 on yellow, 18.6:1 on surface */
-  --ink-muted: #5B5347;         /*  5.4:1 on yellow,  7.4:1 on surface */
-  --ink-faint: #655D4E;         /*  4.6:1 on yellow,  6.4:1 on surface */
+  --ink: #f4f1ea;               /* 17:1 on bg */
+  --ink-muted: #a5a1ad;         /*  7.6:1 on bg */
+  --ink-faint: #6f6b78;         /*  3.8:1 on bg -- eyebrows and hints only, never body */
 
-  --accent: #FF007A;            /* poster magenta -- FILLS AND BORDERS ONLY */
-  --accent-ink: #14100A;        /* text placed ON --accent, 5.0:1 */
-  --accent-strong: #B80057;     /* magenta as TEXT: 4.7:1 on yellow, 6.5:1 on surface */
-  --accent-soft: rgba(255, 0, 122, 0.14);
+  --accent: #F8D839;            /* poster yellow, 13:1 on bg */
+  --accent-ink: #14100A;        /* text placed ON --accent, 13.4:1 */
+  --accent-strong: #F8D839;     /* accent used as TEXT; same value on a dark base */
+  --accent-soft: rgba(248, 216, 57, 0.14);
 
-  --line: rgba(20, 16, 10, 0.16);
-  --line-strong: rgba(20, 16, 10, 0.30);
+  --line: rgba(255, 255, 255, 0.10);
+  --line-strong: rgba(255, 255, 255, 0.18);
 
-  /* Darkened off the poster's own flag greens and reds so they still read on a light
-     surface. The poster's #F62317 red is 3.0:1 on white -- too light for an error. */
-  --success: #19683A;
-  --success-soft: rgba(25, 104, 58, 0.13);
-  --danger: #AE1F19;
-  --danger-soft: rgba(174, 31, 25, 0.13);
+  --success: #6fcf8d;
+  --success-soft: rgba(111, 207, 141, 0.13);
+  --danger: #f2726f;
+  --danger-soft: rgba(242, 114, 111, 0.13);
 
   /* ---- TYPE --------------------------------------------------------------- */
   --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -90,8 +86,8 @@
   --radius-lg: 18px;
   --radius-full: 999px;
 
-  --shadow-sm: 0 1px 2px rgba(20, 16, 10, 0.10);
-  --shadow-md: 0 8px 24px rgba(20, 16, 10, 0.14);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
 
   /* ---- MOTION -------------------------------------------------------------- */
   --ease: cubic-bezier(0.32, 0.72, 0, 1);

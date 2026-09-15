@@ -17,7 +17,10 @@ body {
 
 h1, h2, h3, p, figure { margin: 0; }
 ul, ol { margin: 0; padding: 0; list-style: none; }
-img { max-width: 100%; display: block; }
+/* height: auto is load-bearing. An <img> with width/height attributes keeps the
+   attribute height as a fixed pixel height once max-width shrinks it, which squeezes
+   the poster to a phone's width while leaving it 1400px tall. */
+img { max-width: 100%; height: auto; display: block; }
 
 a { color: var(--accent-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 

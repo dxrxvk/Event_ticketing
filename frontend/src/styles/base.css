@@ -19,7 +19,7 @@ h1, h2, h3, p, figure { margin: 0; }
 ul, ol { margin: 0; padding: 0; list-style: none; }
 img { max-width: 100%; display: block; }
 
-a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a { color: var(--accent-strong); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 
 button, input, textarea, select { font: inherit; color: inherit; }
 

@@ -47,6 +47,6 @@ const label = computed(() => {
 .badge__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 .badge--open { color: var(--success); background: var(--success-soft); border-color: transparent; }
-.badge--low { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.badge--low { color: var(--accent-strong); background: var(--accent-soft); border-color: transparent; }
 .badge--gone { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
 </style>

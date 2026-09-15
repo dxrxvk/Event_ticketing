@@ -91,7 +91,7 @@ function removeGuest(index) {
   padding: var(--space-2) 0;
   font-size: var(--text-base);
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-strong);
   background: none;
   border: 0;
   cursor: pointer;

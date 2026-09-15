@@ -92,7 +92,11 @@ const limitHelpLink = computed(() => {
 .amount {
   padding: var(--space-5);
   text-align: center;
-  background: var(--accent-soft);
+  /* --surface, not --accent-soft: a 14% magenta wash over the yellow page composites
+     to a muddy peach and drops the amount to ~3.6:1. This is the number people type
+     into a banking app, so it gets the highest-contrast surface on the page (6.5:1)
+     and keeps the magenta as a border. */
+  background: var(--surface);
   border: 1px solid var(--accent);
   border-radius: var(--radius-lg);
 }
@@ -100,11 +104,12 @@ const limitHelpLink = computed(() => {
 .amount__value {
   margin-top: var(--space-2);
   font-family: var(--font-display);
+  font-stretch: 125%;   /* Archivo's width axis -- matches the poster's wide title */
   font-size: var(--text-display);
   font-weight: 700;
   line-height: 1;
   letter-spacing: var(--tracking-tight);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .amount__note {

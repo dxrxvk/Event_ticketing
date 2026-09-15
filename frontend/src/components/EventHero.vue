@@ -12,7 +12,12 @@ const when = eventDateParts()
       look finished without it.
     -->
     <figure v-if="event.posterUrl" class="hero__poster">
-      <img :src="event.posterUrl" :alt="`Poster for ${event.name}`" />
+      <img
+        :src="event.posterUrl"
+        :alt="`Poster for ${event.name}`"
+        width="1000"
+        height="1400"
+      />
     </figure>
 
     <p class="eyebrow hero__kicker">You're invited</p>
@@ -53,14 +58,17 @@ const when = eventDateParts()
   border-radius: var(--radius-lg);
   overflow: hidden;
   border: 1px solid var(--line);
-  background: var(--surface);
+  /* --bg, not --surface: the poster's own field is this same yellow, so an off-white
+     card behind it would show as a halo on every edge while the image loads. */
+  background: var(--bg);
 }
 
-.hero__kicker { color: var(--accent); }
+.hero__kicker { color: var(--accent-strong); }
 
 .hero__title {
   margin-top: var(--space-3);
   font-family: var(--font-display);
+  font-stretch: 125%;   /* Archivo's width axis -- matches the poster's wide title */
   font-size: var(--text-display);
   line-height: var(--leading-tight);
   letter-spacing: var(--tracking-tight);

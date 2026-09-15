@@ -7,7 +7,9 @@ from django.urls import path
 from django.utils import timezone
 
 from . import exports
-from .models import Booking, EventSettings, Guest, seats_remaining, seats_taken
+from .models import (
+    Booking, EventSettings, Guest, SongRequest, seats_remaining, seats_taken,
+)
 from .money import format_ars
 
 # A self-confirmed booking never expires (the buyer is trusted), so one that stays
@@ -31,6 +33,12 @@ class EventSettingsAdmin(admin.ModelAdmin):
             'description': 'Shown to buyers on the pay screen. The API response is '
                            'authoritative -- a stale value baked into the frontend is '
                            'overwritten from here.',
+        }),
+        ('Revolut (payers abroad)', {
+            'fields': ('revolut_tag', 'revolut_currency', 'revolut_price_cents'),
+            'description': 'Optional second destination: one flat price per ticket in one '
+                           'currency. Leave the tag blank to hide it. These payments land '
+                           'in Revolut, so reconciliation means checking two statements.',
         }),
         ('Deadlines', {
             'fields': ('pending_ttl_minutes', 'list_deadline', 'sales_close_at',
@@ -57,6 +65,12 @@ class GuestInline(admin.TabularInline):
     model = Guest
     extra = 0
     # Guest.clean() blocks adds that would push past capacity.
+
+
+class SongRequestInline(admin.TabularInline):
+    model = SongRequest
+    extra = 0
+    fields = ('position', 'text')
 
 
 class RefundFilter(admin.SimpleListFilter):
@@ -115,7 +129,7 @@ class BookingAdmin(admin.ModelAdmin):
         'sender_account_name', 'guests__full_name',
     )
     ordering = ('-confirmed_at', '-created_at')
-    inlines = [GuestInline]
+    inlines = [GuestInline, SongRequestInline]
     readonly_fields = ('reference', 'created_at')
     actions = ('mark_verified', 'mark_refund_owed', 'mark_refunded', 'expire_stale_pending')
 
@@ -164,6 +178,9 @@ class BookingAdmin(admin.ModelAdmin):
             path('exports/organiser.csv',
                  self.admin_site.admin_view(self.export_organiser_csv),
                  name='tickets_export_organiser_csv'),
+            path('exports/playlist.txt',
+                 self.admin_site.admin_view(self.export_playlist_text),
+                 name='tickets_export_playlist_txt'),
         ]
         return custom + super().get_urls()
 
@@ -173,7 +190,11 @@ class BookingAdmin(admin.ModelAdmin):
             'title': 'Guest list exports',
             'confirmed_count': exports.confirmed_guests().count(),
             'pending_count': exports.pending_guest_count(),
+            'song_count': len(exports.playlist_lines()),
         })
+
+    def export_playlist_text(self, request):
+        return exports.playlist_text_response()
 
     def export_venue_text(self, request):
         return exports.venue_text_response()

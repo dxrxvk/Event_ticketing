@@ -9,4 +9,5 @@ urlpatterns = [
     path('bookings/', views.create_booking, name='create-booking'),
     # token_urlsafe uses [A-Za-z0-9_-], all of which <str:> accepts.
     path('bookings/<str:reference>/confirm/', views.confirm_booking, name='confirm-booking'),
+    path('bookings/<str:reference>/songs/', views.song_requests, name='song-requests'),
 ]

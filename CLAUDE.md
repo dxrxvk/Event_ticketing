@@ -123,7 +123,8 @@ Backend and frontend are deliberately separate deployments:
 
 - **Django + DRF on Render free tier.** Spins down after 15 min idle, ~50-60s cold start.
   The API is small and flat (`/api/health/`, `/api/availability/`, `POST /api/bookings/`,
-  `POST /api/bookings/<reference>/confirm/`). `POST /api/bookings/` must return
+  `POST /api/bookings/<reference>/confirm/`, `POST /api/bookings/<reference>/songs/`).
+  `POST /api/bookings/` must return
   *everything* the pay screen needs in one response — no second round trip to a cold
   backend (`pay_screen_payload()` in `tickets/serializers.py`).
 - **Booking rules live in `tickets/services.py`, not in views.** `create_booking()` and
@@ -131,8 +132,18 @@ Backend and frontend are deliberately separate deployments:
   into responses. The race test drives the service directly with threads.
 - **Error contract** — every state conflict is `409` with `{"error": <code>}`:
   `sold_out` (carries `remaining`), `sales_closed`, `booking_expired`,
-  `booking_cancelled`. The last three also carry `organiser_whatsapp` so the page can
-  offer a human. Validation is `400`, unknown reference `404`.
+  `booking_cancelled`, `booking_not_confirmed` (song requests before payment is
+  confirmed). All but `sold_out` also carry `organiser_whatsapp` so the page can offer a
+  human. Validation is `400`, unknown reference `404`.
+- **Revolut is a second flat price, not a second price list.** `EventSettings` holds
+  `revolut_tag`, `revolut_currency` and `revolut_price_cents`; the pay payload's `revolut`
+  key is `null` until the tag is set, otherwise tag, `revolut.me` link and
+  `revolut_price_cents * quantity`. The peso `total_amount` is untouched. Reconciliation
+  then means two statements; `verified_source` can say "revolut".
+- **Song requests** (`SongRequest`, max three per booking) are stored as typed and only
+  accepted for confirmed bookings. The admin shows them inline and exports a deduplicated
+  playlist text under the guest-list exports. Any real-playlist sync is a layer on top of
+  the stored row, never a replacement for it.
 - **`/api/health/` runs `SELECT 1` on purpose.** §7 says it touches nothing, but Neon
   sleeps too — a ping that skips the database leaves Postgres cold for the first real
   query, which happens inside the locked transaction in `POST /bookings/`.

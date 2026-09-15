@@ -14,3 +14,14 @@ def format_ars(cents, with_cents=False):
     if with_cents:
         return f'{grouped},{remainder:02d}'
     return grouped
+
+
+def format_minor_units(cents, currency):
+    """500, 'EUR' -> 'EUR 5.00'.
+
+    Dot decimal on purpose, unlike format_ars: this figure is typed into Revolut, which
+    shows amounts that way, not into an Argentine bank.
+    """
+    units, remainder = divmod(int(cents), 100)
+    # strip(): a tag set before its currency should not render a leading space.
+    return f'{currency.upper()} {units:,}.{remainder:02d}'.strip()

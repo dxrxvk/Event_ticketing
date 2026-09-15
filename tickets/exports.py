@@ -15,7 +15,9 @@ import unicodedata
 from django.http import HttpResponse
 from django.utils import timezone
 
-from .models import Booking, EventSettings, Guest, fresh_pending_guest_filter
+from .models import (
+    Booking, EventSettings, Guest, SongRequest, fresh_pending_guest_filter,
+)
 from .money import format_ars
 
 
@@ -152,3 +154,34 @@ def organiser_csv_response():
         ORGANISER_HEADER,
         organiser_rows(),
     )
+
+
+def playlist_lines():
+    """Song requests from confirmed bookings, in arrival order, without repeats.
+
+    Three people asking for the same track is one line on the playlist. The key folds
+    case and accents, so 'Rosalía' and 'rosalia' are the same request.
+    """
+    seen = set()
+    lines = []
+    for song in (
+        SongRequest.objects
+        .filter(booking__status__in=Booking.CONFIRMED_STATUSES)
+        .order_by('created_at', 'position', 'id')
+    ):
+        key = fold_accents(song.text)
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(song.text)
+    return lines
+
+
+def playlist_text_response():
+    # No stamp: this never goes to the venue either.
+    body = '\n'.join(playlist_lines())
+    response = HttpResponse(
+        body.encode('utf-8'), content_type='text/plain; charset=utf-8'
+    )
+    response['Content-Disposition'] = f'attachment; filename="playlist-{_today()}.txt"'
+    return response

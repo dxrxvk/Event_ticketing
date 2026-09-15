@@ -13,7 +13,8 @@ import { event, whatsappLink } from './event.config.js'
 
 const {
   step, booking, availability, notice, submitting, confirming, fieldErrors,
-  canBook, soldOut, salesClosed, loadAvailability, submit, confirm,
+  songs, songsSaving, songsSaved, songsError,
+  canBook, soldOut, salesClosed, loadAvailability, submit, confirm, saveSongs,
 } = useBooking()
 
 onMounted(() => {
@@ -77,7 +78,17 @@ const covered = ref(Boolean(event.posterUrl))
                 @confirm="confirm"
               />
 
-              <ConfirmedPanel v-else key="done" :booking="booking" />
+              <ConfirmedPanel
+                v-else
+                key="done"
+                :booking="booking"
+                :songs="songs"
+                :songs-saving="songsSaving"
+                :songs-saved="songsSaved"
+                :songs-error="songsError"
+                @update:songs="songs = $event"
+                @save-songs="saveSongs"
+              />
             </Transition>
           </div>
 

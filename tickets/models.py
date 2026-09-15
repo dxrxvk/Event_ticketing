@@ -13,6 +13,7 @@ from django.utils import timezone
 REFERENCE_BYTES = 9
 
 MAX_TICKETS_PER_BOOKING = 8
+MAX_SONG_REQUESTS = 3
 
 
 def generate_reference():
@@ -53,6 +54,25 @@ class EventSettings(models.Model):
         max_length=30,
         blank=True,
         help_text='Used for wa.me links on the sold-out and error screens.',
+    )
+
+    # Second destination for guests paying from outside Argentina. One flat figure per
+    # ticket in one currency -- a second base price, never per-person variation. A blank
+    # tag hides the whole block on the pay screen.
+    revolut_tag = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text='Revtag without the @. Blank hides Revolut on the pay screen.',
+    )
+    revolut_currency = models.CharField(
+        max_length=3,
+        blank=True,
+        help_text='ISO code the Revolut price is in, e.g. EUR.',
+    )
+    revolut_price_cents = models.PositiveIntegerField(
+        default=0,
+        help_text='Integer minor units in that currency: 500 = 5.00. Flat for everyone '
+                  'paying via Revolut.',
     )
 
     pending_ttl_minutes = models.PositiveIntegerField(
@@ -247,6 +267,34 @@ class Guest(models.Model):
                 f'Event is at capacity ({event_settings.capacity}). Cancel or expire a '
                 f'booking before adding another guest.'
             )
+
+
+class SongRequest(models.Model):
+    """A buyer's optional song request, at most MAX_SONG_REQUESTS per booking.
+
+    Stored exactly as typed. Anything that ends up on a real playlist is a layer on top
+    of this row, so a request is never lost to a flaky third party.
+    """
+
+    booking = models.ForeignKey(
+        Booking,
+        related_name='song_requests',
+        on_delete=models.CASCADE,
+    )
+    position = models.PositiveSmallIntegerField()
+    text = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('position',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['booking', 'position'], name='songrequest_unique_position',
+            ),
+        ]
+
+    def __str__(self):
+        return self.text
 
 
 def fresh_pending_guest_filter(cutoff):

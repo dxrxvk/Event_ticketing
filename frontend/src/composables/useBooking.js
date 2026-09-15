@@ -18,6 +18,13 @@ const submitting = ref(false)
 const confirming = ref(false)
 const fieldErrors = ref({})
 
+// Song requests live beside the booking, not on it: confirm() replaces `booking` with the
+// server's copy, which would wipe anything stored there.
+const songs = ref(['', '', ''])
+const songsSaving = ref(false)
+const songsSaved = ref(false)
+const songsError = ref('')
+
 const soldOut = computed(() => availability.value?.sold_out === true)
 const salesClosed = computed(() => availability.value?.sales_open === false)
 const canBook = computed(() => !soldOut.value && !salesClosed.value)
@@ -87,10 +94,32 @@ async function confirm() {
   }
 }
 
+async function saveSongs() {
+  if (songsSaving.value || !booking.value) return
+  songsSaving.value = true
+  songsSaved.value = false
+  songsError.value = ''
+
+  try {
+    const saved = await api.saveSongRequests(booking.value.reference, songs.value)
+    const texts = saved.songs.map((song) => song.text)
+    // Mirror what the server kept, so a blank slot in the middle closes up.
+    songs.value = [0, 1, 2].map((i) => texts[i] ?? '')
+    songsSaved.value = true
+  } catch (error) {
+    songsError.value = error.message
+  } finally {
+    songsSaving.value = false
+  }
+}
+
 function startOver() {
   booking.value = null
   notice.value = null
   fieldErrors.value = {}
+  songs.value = ['', '', '']
+  songsSaved.value = false
+  songsError.value = ''
   step.value = 'form'
   loadAvailability()
 }
@@ -98,8 +127,9 @@ function startOver() {
 export function useBooking() {
   return {
     step, booking, availability, notice, submitting, confirming, fieldErrors,
+    songs, songsSaving, songsSaved, songsError,
     soldOut, salesClosed, canBook,
-    loadAvailability, submit, confirm, startOver,
+    loadAvailability, submit, confirm, saveSongs, startOver,
     dismissNotice: () => { notice.value = null },
   }
 }

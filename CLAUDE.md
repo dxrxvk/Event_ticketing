@@ -25,8 +25,12 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
   and 87 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
-  the capacity invariant below — and run for real on Postgres (a `server closed the
-  connection` error there is Neon's free compute dropping a thread, not a bug; rerun).
+  the capacity invariant below — and run for real on Postgres. **Run the Postgres-only
+  classes against a local Postgres, not against Neon from afar:** the burst tests make
+  hundreds of sequential requests inside one transaction, and at ~190ms per round trip
+  from Buenos Aires to Oregon a four-test class takes ten minutes and Neon drops the
+  connection (`server closed the connection unexpectedly`). That is the environment, not
+  a bug. A killed run leaves `test_neondb` behind; `--noinput` replaces it.
 - **Load script:** `scripts/loadtest.py` (stdlib only) fires concurrent requests at a
   running server and exits non-zero on any 5xx or oversell. Reads are safe against any
   URL; `--write` refuses non-local hosts unless `--allow-remote-writes` is passed.

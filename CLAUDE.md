@@ -55,8 +55,8 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
   with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
 - **Still to do:** `EventSettings` is filled (capacity 60, alias, holder, WhatsApp);
   Revolut is optional and off until its three fields are set. Confirm the start time
-  (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local) and delete
-  the organiser's own test bookings before the event. The poster (`public/poster.webp`)
+  (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local).
+  `RUNBOOK.md` is the organiser's event-day checklist. The poster (`public/poster.webp`)
   and preview crop (`public/og.jpg`, 1200x630) are in. Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
   missing `/og.jpg` returns `200 text/html` instead of `404`, the preview silently has no
   image, and WhatsApp caches that result hard.

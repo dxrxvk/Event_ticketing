@@ -359,6 +359,12 @@ class ReadEndpointTests(TestCase):
         self.assertEqual(stale.status, Booking.Status.PENDING)
 
 
+# Same reason as ExportTests below: admin pages use {% static %}, and the manifest
+# storage refuses files collectstatic has not hashed.
+@override_settings(STORAGES={
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+})
 class AdminAccessTests(TestCase):
     def setUp(self):
         configure_event()
@@ -372,6 +378,17 @@ class AdminAccessTests(TestCase):
         # A second row is impossible (save pins pk=1), so adding one would silently
         # overwrite the live configuration.
         self.assertEqual(self.client.get('/admin/tickets/eventsettings/add/').status_code, 403)
+
+    def test_song_requests_have_their_own_list(self):
+        # The organiser reads the playlist from the sidebar, not booking by booking.
+        booking = make_booking(status=Booking.Status.SELF_CONFIRMED)
+        SongRequest.objects.create(booking=booking, position=1, text='Drake - One Dance')
+        User.objects.create_superuser('org', 'o@example.com', 'pw')
+        self.client.login(username='org', password='pw')
+        response = self.client.get('/admin/tickets/songrequest/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Drake - One Dance')
+        self.assertContains(response, booking.reference)
 
 
 @skipUnless(

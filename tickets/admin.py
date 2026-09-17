@@ -322,3 +322,27 @@ class GuestAdmin(admin.ModelAdmin):
     @admin.display(description='Status', ordering='booking__status')
     def booking_status(self, obj):
         return obj.booking.get_status_display()
+
+
+@admin.register(SongRequest)
+class SongRequestAdmin(admin.ModelAdmin):
+    """Edited inline on the booking; registered on its own so the whole list can be
+    scanned and searched without opening bookings one by one."""
+
+    list_display = ('text', 'position', 'booking_reference', 'buyer', 'booking_status')
+    list_filter = ('booking__status',)
+    search_fields = ('text', 'booking__reference', 'booking__buyer_name')
+    list_select_related = ('booking',)
+    ordering = ('-created_at', 'position')
+
+    @admin.display(description='Booking', ordering='booking__reference')
+    def booking_reference(self, obj):
+        return obj.booking.reference
+
+    @admin.display(description='Buyer', ordering='booking__buyer_name')
+    def buyer(self, obj):
+        return obj.booking.buyer_name
+
+    @admin.display(description='Status', ordering='booking__status')
+    def booking_status(self, obj):
+        return obj.booking.get_status_display()

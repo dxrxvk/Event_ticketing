@@ -25,8 +25,12 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
   and 87 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
-  the capacity invariant below — and run for real on Postgres (a `server closed the
-  connection` error there is Neon's free compute dropping a thread, not a bug; rerun).
+  the capacity invariant below — and run for real on Postgres. **Run the Postgres-only
+  classes against a local Postgres, not against Neon from afar:** the burst tests make
+  hundreds of sequential requests inside one transaction, and at ~190ms per round trip
+  from Buenos Aires to Oregon a four-test class takes ten minutes and Neon drops the
+  connection (`server closed the connection unexpectedly`). That is the environment, not
+  a bug. A killed run leaves `test_neondb` behind; `--noinput` replaces it.
 - **Load script:** `scripts/loadtest.py` (stdlib only) fires concurrent requests at a
   running server and exits non-zero on any 5xx or oversell. Reads are safe against any
   URL; `--write` refuses non-local hosts unless `--allow-remote-writes` is passed.
@@ -55,8 +59,8 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
   with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
 - **Still to do:** `EventSettings` is filled (capacity 60, alias, holder, WhatsApp);
   Revolut is optional and off until its three fields are set. Confirm the start time
-  (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local) and delete
-  the organiser's own test bookings before the event. The poster (`public/poster.webp`)
+  (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local).
+  `RUNBOOK.md` is the organiser's event-day checklist. The poster (`public/poster.webp`)
   and preview crop (`public/og.jpg`, 1200x630) are in. Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
   missing `/og.jpg` returns `200 text/html` instead of `404`, the preview silently has no
   image, and WhatsApp caches that result hard.

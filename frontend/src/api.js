@@ -30,6 +30,17 @@ async function request(path, { method = 'GET', body } = {}) {
 
   const payload = await response.json().catch(() => ({}))
 
+  if (response.status === 429) {
+    // DRF's throttle answers {"detail": ...}, outside the app's error contract. Dozens
+    // of coworkers share one office or carrier address, so say what to do, not "error".
+    throw new ApiError(
+      'throttled',
+      'Too many attempts from your network right now. Wait a minute and try again.',
+      payload,
+      response.status,
+    )
+  }
+
   if (!response.ok) {
     throw new ApiError(
       payload.error ?? 'unknown',

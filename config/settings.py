@@ -238,10 +238,14 @@ REST_FRAMEWORK = {
     # dozens of them behind one NAT'd IP, and an oversubscribed event means the link
     # dropping into a WhatsApp group can produce 50 bookings from one apparent address in
     # ten minutes. This stops a runaway script without ever stopping a crowd.
+    # 300/hour is five a minute sustained from one address: still cuts off a runaway
+    # script, and gives a whole office or carrier NAT 2.5x headroom over the worst case
+    # of every seat being booked from one IP inside an hour. Confirm has its own bucket
+    # because the buyer who has already transferred is the one who must never see a 429,
+    # and songs have theirs so an unbounded "save" button cannot spend either.
     'DEFAULT_THROTTLE_RATES': {
-        'booking': '120/hour',
-        # Separate bucket so an unbounded "save songs" button cannot spend the booking
-        # budget of everyone behind the same office IP.
+        'booking': '300/hour',
+        'confirm': '300/hour',
         'song_requests': '120/hour',
     },
 }

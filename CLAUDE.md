@@ -22,8 +22,14 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 41 tests (`uv run python manage.py test tickets`). 3 of those skip on SQLite by
-  design — see the capacity invariant below — and run for real on Postgres.
+  and 87 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
+  admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
+  the capacity invariant below — and run for real on Postgres (a `server closed the
+  connection` error there is Neon's free compute dropping a thread, not a bug; rerun).
+- **Load script:** `scripts/loadtest.py` (stdlib only) fires concurrent requests at a
+  running server and exits non-zero on any 5xx or oversell. Reads are safe against any
+  URL; `--write` refuses non-local hosts unless `--allow-remote-writes` is passed.
 - **Frontend done:** `frontend/` holds a Vite + Vue 3 SPA covering hero, form, pay screen,
   confirmed screen and the sold-out / closed / expired states. `npm run dev` proxies
   `/api` to Django on :8000, so CORS does not exist in development.
@@ -47,11 +53,11 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 - **CORS is already set** on Render: `CORS_ALLOWED_ORIGINS` =
   `https://event-ticketing.dhruxk.workers.dev`. A preflight from that origin comes back
   with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
-- **Still to do:** filling in `EventSettings` in the admin (capacity is `0`, so
-  `/api/availability/` currently answers `sold_out: true`; alias, CVU, account holder and
-  WhatsApp are blank) and confirming the start time in `frontend/src/event.config.js`.
-  The poster (`public/poster.webp`) and preview crop (`public/og.jpg`, 1200x630) are in.
-  Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
+- **Still to do:** `EventSettings` is filled (capacity 60, alias, holder, WhatsApp);
+  Revolut is optional and off until its three fields are set. Confirm the start time
+  (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local) and delete
+  the organiser's own test bookings before the event. The poster (`public/poster.webp`)
+  and preview crop (`public/og.jpg`, 1200x630) are in. Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
   missing `/og.jpg` returns `200 text/html` instead of `404`, the preview silently has no
   image, and WhatsApp caches that result hard.
 
@@ -75,6 +81,8 @@ uv run python manage.py test                                  # all tests
 uv run python manage.py test tickets                          # one app
 uv run python manage.py test tickets.tests.BookingTests        # one class
 uv run python manage.py test tickets.tests.BookingTests.test_x # one test
+uv run python manage.py test tickets.test_robustness          # bursts, races, hostile input
+uv run python scripts/loadtest.py --base-url https://tickets-6cko.onrender.com  # read-only load
 
 uv run python manage.py check --deploy                        # pre-deploy audit (step 11)
 ```
@@ -119,6 +127,14 @@ event.
 - **`reference` is an unguessable short token** (≥64 bits), never the sequential PK.
 - **CORS whitelists the exact frontend origin**, not `*`. Organiser views are
   `@staff_member_required` — the DRF default in this project is `AllowAny`.
+- **Throttling needs `@throttle_scope(...)` on the view.** `ScopedRateThrottle` reads the
+  scope from the view, not from the throttle class; without the decorator it lets
+  everything through and raises nothing (production ran that way until 2026-09-17).
+  Three buckets, per IP: `booking` 300/hour, `confirm` 300/hour (a buyer who has already
+  transferred must never be the one told to wait) and `song_requests` 120/hour.
+  `ThrottleTests` derives the limits from settings and asserts the request past each is
+  a 429, so a regression fails loudly. The frontend maps 429 to a plain "too many
+  attempts from your network" notice.
 
 ## Architecture
 

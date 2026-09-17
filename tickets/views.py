@@ -1,6 +1,6 @@
 from django.db import connection
 from rest_framework import status
-from rest_framework.decorators import api_view, throttle_classes
+from rest_framework.decorators import api_view, throttle_classes, throttle_scope
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -13,13 +13,15 @@ from .serializers import (
 
 
 class BookingRateThrottle(ScopedRateThrottle):
-    scope = 'booking'
+    """Rate-limits the write endpoints under DEFAULT_THROTTLE_RATES in settings.py.
 
-
-class SongRequestRateThrottle(ScopedRateThrottle):
-    # Its own bucket: the booking rate is sized for two requests per buyer behind one
-    # office IP, and an unbounded "save songs" button must not spend that budget.
-    scope = 'song_requests'
+    ScopedRateThrottle reads its scope from the *view* (`view.throttle_scope`), not from
+    the throttle class -- a `scope` attribute here does nothing and the throttle silently
+    lets everything through. Hence the @throttle_scope decorator on each write view:
+    'booking' for creating, 'confirm' for confirming (a buyer who has already transferred
+    must never be the one told to wait), 'song_requests' for the optional extras.
+    tickets/test_robustness.py asserts the request past each limit is a 429.
+    """
 
 
 def _error(code, message, http_status=status.HTTP_409_CONFLICT, **extra):
@@ -51,6 +53,7 @@ def availability(request):
 
 @api_view(['POST'])
 @throttle_classes([BookingRateThrottle])
+@throttle_scope('booking')
 def create_booking(request):
     serializer = BookingCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -82,6 +85,7 @@ def create_booking(request):
 
 @api_view(['POST'])
 @throttle_classes([BookingRateThrottle])
+@throttle_scope('confirm')
 def confirm_booking(request, reference):
     try:
         booking = services.confirm_booking(reference)
@@ -102,7 +106,8 @@ def confirm_booking(request, reference):
 
 
 @api_view(['POST'])
-@throttle_classes([SongRequestRateThrottle])
+@throttle_classes([BookingRateThrottle])
+@throttle_scope('song_requests')
 def song_requests(request, reference):
     serializer = SongRequestsSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)

@@ -22,7 +22,7 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 87 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  and 96 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
   the capacity invariant below — and run for real on Postgres. **Run the Postgres-only
@@ -199,6 +199,16 @@ Backend and frontend are deliberately separate deployments:
   from it. Only two custom organiser views on top: reconciliation (a checklist of
   unverified bookings with sender name, party size and confirm time, ticked off against a
   bank statement) and the CSV/plain-text exports.
+- **The Seat column is a traffic light, and it must never disagree with `seats_taken()`.**
+  Green is a seat held (`self_confirmed`, and `verified` labelled as such), orange is a
+  fresh `pending` still holding its seat while we wait for the buyer to say they
+  transferred, red is everything holding nothing — `cancelled`, `expired`, and `pending`
+  aged past the TTL. Rank, colour and label live in one table (`SEAT_LIGHTS` in
+  `tickets/admin.py`) with two spellings of the same rule: `seat_rank()` for a single row
+  and `seat_rank_case()` as a SQL `CASE`, so a changelist stays one query and stays
+  sortable. `SeatLightTests` asserts the two agree with each other and with
+  `seats_taken()` for every status at both ages. The dot is `aria-hidden` and always
+  followed by its label: colour alone may not carry the state.
 
 ## Conventions
 

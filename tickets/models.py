@@ -313,18 +313,30 @@ class SongRequest(models.Model):
         return self.text
 
 
-def fresh_pending_guest_filter(cutoff):
-    """Guests on a pending booking that is still inside its TTL.
+def fresh_pending_filter(cutoff, prefix=''):
+    """Pending bookings still inside their TTL.
 
     The single definition of "pending but not yet expired". Anything that needs this --
-    seat counting, the export page's excluded count -- must use it rather than restating
-    the condition, or the two drift the day the TTL rule changes.
+    seat counting, the export page's excluded count, the admin's Seat column -- must use
+    it rather than restating the condition, or the two drift the day the TTL rule
+    changes.
+
+    `prefix` walks a relation, so the same rule can be applied to a queryset of Bookings
+    ('') or of anything hanging off one ('booking__').
     """
-    return Q(booking__status=Booking.Status.PENDING, booking__created_at__gt=cutoff)
+    return Q(**{
+        f'{prefix}status': Booking.Status.PENDING,
+        f'{prefix}created_at__gt': cutoff,
+    })
 
 
-def live_guest_filter(cutoff):
-    """Guests whose booking currently holds a seat.
+def fresh_pending_guest_filter(cutoff):
+    """fresh_pending_filter() from a Guest queryset."""
+    return fresh_pending_filter(cutoff, 'booking__')
+
+
+def live_filter(cutoff, prefix=''):
+    """Bookings that currently hold a seat.
 
     Expiry is expressed as a query predicate, not as a stored status. A stale pending
     booking stops counting the moment it ages past the cutoff, whether or not any sweep
@@ -333,9 +345,14 @@ def live_guest_filter(cutoff):
     sale.
     """
     return (
-        Q(booking__status__in=Booking.CONFIRMED_STATUSES)
-        | fresh_pending_guest_filter(cutoff)
+        Q(**{f'{prefix}status__in': Booking.CONFIRMED_STATUSES})
+        | fresh_pending_filter(cutoff, prefix)
     )
+
+
+def live_guest_filter(cutoff):
+    """live_filter() from a Guest queryset."""
+    return live_filter(cutoff, 'booking__')
 
 
 def seats_taken(event_settings=None, now=None):

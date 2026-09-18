@@ -165,10 +165,18 @@ class EventSettingsAdmin(admin.ModelAdmin):
                            'overwritten from here.',
         }),
         ('Revolut (payers abroad)', {
-            'fields': ('revolut_tag', 'revolut_currency', 'revolut_price_cents'),
-            'description': 'Optional second destination: one flat price per ticket in one '
-                           'currency. Leave the tag blank to hide it. These payments land '
-                           'in Revolut, so reconciliation means checking two statements.',
+            'fields': ('revolut_tag', 'revolut_note', 'revolut_currency',
+                       'revolut_price_cents'),
+            'description': 'Optional second destination. Leave the tag blank to hide it '
+                           'entirely. The note is what payers abroad read: write {total} '
+                           "for this booking's peso total or {price} for its per-ticket "
+                           'price and the sentence follows the price ladder on its own, '
+                           'so you never retype it when the band steps up. Currency and '
+                           'price are optional -- set both to also show a fixed figure '
+                           '(scaled per band), or leave them blank, since ARS moves '
+                           'daily and a pinned figure goes stale. A tag needs at least '
+                           'one of the two. These payments land in Revolut, so '
+                           'reconciliation means checking two statements.',
         }),
         ('Deadlines', {
             'fields': ('pending_ttl_minutes', 'list_deadline', 'sales_close_at',

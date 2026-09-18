@@ -68,10 +68,13 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
   at or *past* capacity, so at the old capacity of 60 the event would have sold seats
   51-60 at 7.000 with no third band and no extra seats — a half-applied ladder nobody
   asked for. After deploying, check the ladder readout on the event settings page reads
-  `1-50 · 51-100 · 101-130`. If Revolut is in use, its price is the *first-band* figure
+  `1-50 · 51-100 · 101-130`. If Revolut is priced, its price is the *first-band* figure
   and higher bands scale from it, so check that too.
 - **Still to do:** `EventSettings` is filled (capacity 60, alias, holder, WhatsApp);
-  Revolut is optional and off until its three fields are set. Confirm the start time
+  Revolut is off until the tag plus either a note or a currency+price pair are set — the
+  price is optional and normally left blank, so fill `revolut_note` instead (suggested:
+  `ARS moves daily, so send the equivalent of {total} ARS in USD or GBP and message me
+  once you have.`). Confirm the start time
   (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local).
   `RUNBOOK.md` is the organiser's event-day checklist. The poster (`public/poster.webp`)
   and preview crop (`public/og.jpg`, 1200x630) are in. Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
@@ -206,15 +209,37 @@ Backend and frontend are deliberately separate deployments:
   `booking_cancelled`, `booking_not_confirmed` (song requests before payment is
   confirmed). All but `sold_out` also carry `organiser_whatsapp` so the page can offer a
   human. Validation is `400`, unknown reference `404`.
-- **Revolut rides the same ladder, on a second rail.** `EventSettings` holds
-  `revolut_tag`, `revolut_currency` and `revolut_price_cents` (the price for the *first*
-  band); the pay payload's `revolut` key is `null` until tag, currency and price are all
-  set. Higher bands are scaled from the base pair with integer arithmetic, so a Revolut
-  payer in the 9.000 band owes 9/5 of the base Revolut figure — otherwise the cheapest
+- **Revolut is usually a sentence, not a second price.** `EventSettings` holds
+  `revolut_tag`, `revolut_note`, `revolut_currency` and `revolut_price_cents`. The block
+  shows when the tag is set **and** it has something to say — a note, a currency+price
+  pair, or both. `revolut_is_shown()` is the one definition of that, used by both
+  `clean()` and `revolut_payload()`, so the admin cannot save a state the pay screen
+  would render as an empty box. `revolut_price_cents` is **optional** (`null=True,
+  blank=True`): ARS/USD moves daily, so a pinned foreign figure is wrong within a week
+  and the expected configuration is a note alone. When it is unset the payload's
+  `currency`/`amount_display` are `''` and `amount_cents` is `null` — the keys are always
+  present so the pay screen guards with one truthiness check each.
+- **`revolut_note` carries `{total}` and `{price}` tokens**, filled per booking by
+  `EventSettings.render_revolut_note()` — `{total}` is the peso total, `{price}` the
+  per-ticket price, both already formatted (`5.000`), and `{price}` names both figures
+  (`5.000 / 7.000`) for a party that straddles a step. That is the whole point: the
+  organiser writes "send the equivalent of {total} ARS in USD or GBP" once and the
+  sentence follows the ladder instead of being retyped at every band, which is how it
+  would otherwise end up quietly lying. An **unknown token renders literally** rather
+  than raising (`_LiteralMissing`), because a stray brace in an admin textarea must not
+  500 the pay screen of a buyer who has already transferred. Rendered with `{{ }}` in
+  `PayPanel.vue`, never `v-html` — it is organiser-typed text going into every browser.
+- **When it *is* priced, Revolut rides the same ladder.** `revolut_price_cents` is the
+  *first*-band figure and higher bands scale from it with integer arithmetic, so a
+  Revolut payer in the 9.000 band owes 9/5 of the base figure — otherwise the cheapest
   ticket at the door would be a foreign one bought last. The quote is frozen on
   `Booking.revolut_amount_cents` at create, like the peso one. The peso `total_amount` is
   separate and untouched. Reconciliation then means two statements; `verified_source` can
   say "revolut".
+- **The Revolut block is a collapsed `<details>`, not a third card.** Alias, CVU and
+  reference stay the primary path; a native disclosure gives keyboard operation and
+  find-in-page for free with no state in the composable, and keeps a local buyer from
+  reading a Revtag as an equal option and sending pesos to it.
 - **Song requests** (`SongRequest`, max three per booking) are stored as typed and only
   accepted for confirmed bookings. The admin shows them inline and exports a deduplicated
   playlist text under the guest-list exports. Any real-playlist sync is a layer on top of

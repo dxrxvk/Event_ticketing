@@ -182,19 +182,42 @@ class CreateBookingTests(TestCase):
         self.assertIsNone(self.post().json()['revolut'])
 
     def test_revolut_block_is_absent_while_half_configured(self):
-        # A tag with no price would otherwise publish "EUR 0.00" to every buyer.
+        # A tag with nothing to say -- no note and no price -- would otherwise publish a
+        # bare Revtag with no amount and leave the buyer guessing what to send.
         configure_event(revolut_tag='dhruvk')
         self.assertIsNone(self.post().json()['revolut'])
         configure_event(revolut_tag='dhruvk', revolut_currency='EUR', revolut_price_cents=0)
         self.assertIsNone(self.post(guests=guest_payload(3)).json()['revolut'])
+        configure_event(revolut_tag='dhruvk', revolut_currency='EUR',
+                        revolut_price_cents=None)
+        self.assertIsNone(self.post(guests=guest_payload(2)).json()['revolut'])
 
     def test_half_configured_revolut_is_rejected_in_the_admin_form(self):
         row = configure_event()
         row.revolut_tag = 'dhruvk'
         with self.assertRaises(ValidationError):
             row.full_clean()
+        # A note alone is enough: the price is optional because ARS moves daily.
+        row.revolut_note = 'Send the equivalent of {total} ARS.'
+        row.full_clean()
+        # So is a priced pair with no note.
+        row.revolut_note = ''
         row.revolut_currency, row.revolut_price_cents = 'EUR', 500
         row.full_clean()
+        # A price with no currency is unreadable, so it is refused either way.
+        row.revolut_currency = ''
+        with self.assertRaises(ValidationError):
+            row.full_clean()
+
+    def test_revolut_price_may_be_left_blank(self):
+        # The regression guard for the optional price: PositiveIntegerField needs both
+        # null=True and blank=True, and dropping either turns a blank admin box into an
+        # IntegrityError rather than the intended "note only".
+        row = configure_event(revolut_tag='dhruvk', revolut_note='Ask me.',
+                              revolut_price_cents=None)
+        row.full_clean()
+        # And nothing downstream multiplies by None.
+        self.assertEqual(row.revolut_price_for(900_000), 0)
 
     def test_revolut_block_multiplies_the_flat_price_by_party_size(self):
         # Pasted straight from Revolut, @ and trailing space included, lower-case currency.
@@ -203,12 +226,41 @@ class CreateBookingTests(TestCase):
         self.assertEqual(body['revolut'], {
             'tag': 'dhruvk',
             'link': 'https://revolut.me/dhruvk',
+            'note': '',
             'currency': 'EUR',
             'amount_cents': 1500,
             'amount_display': 'EUR 15.00',
         })
         # The peso amount is untouched: Revolut is a second flat figure, not a discount.
         self.assertEqual(body['total_amount'], PRICE * 3)
+
+    def test_revolut_note_alone_shows_the_block_without_an_amount(self):
+        # The expected configuration: no pinned figure, because ARS/USD moves daily.
+        configure_event(revolut_tag='dhruvk', revolut_price_cents=None,
+                        revolut_note='Send the equivalent of {total} ARS in USD or GBP.')
+        body = self.post(guests=guest_payload(3)).json()
+        self.assertEqual(body['revolut'], {
+            'tag': 'dhruvk',
+            'link': 'https://revolut.me/dhruvk',
+            'note': 'Send the equivalent of 15.000 ARS in USD or GBP.',
+            'currency': '',
+            'amount_cents': None,
+            'amount_display': '',
+        })
+
+    def test_revolut_note_substitutes_total_and_price(self):
+        configure_event(revolut_tag='dhruvk', revolut_price_cents=None,
+                        revolut_note='Send {total} ({price} each).')
+        body = self.post(guests=guest_payload(3)).json()
+        self.assertEqual(body['revolut']['note'], 'Send 15.000 (5.000 each).')
+
+    def test_revolut_note_leaves_unknown_tokens_literal(self):
+        # A stray brace in an admin textarea must not 500 the pay screen of a buyer who
+        # has already transferred the money.
+        configure_event(revolut_tag='dhruvk', revolut_price_cents=None,
+                        revolut_note='{foo} then {total}')
+        body = self.post(guests=guest_payload(2)).json()
+        self.assertEqual(body['revolut']['note'], '{foo} then 10.000')
 
     def test_quantity_is_derived_not_accepted(self):
         """A client-supplied quantity must not be able to disagree with the guest list."""
@@ -874,6 +926,24 @@ class TierPricingTests(TestCase):
         event = configure_event(revolut_tag='dhruvk', revolut_currency='EUR',
                                 revolut_price_cents=5, ticket_price_cents=200_000)
         self.assertEqual(event.revolut_price_for(100_000), 3)
+
+    def test_revolut_note_price_token_follows_the_band(self):
+        """The whole point of {price}: the note tracks the ladder without being retyped."""
+        configure_event(revolut_tag='dhruvk', revolut_price_cents=None,
+                        revolut_note='{price} each, {total} total.')
+        default_tiers()
+        make_booking(quantity=TIER_TWO_AT, status=Booking.Status.SELF_CONFIRMED)
+        self.assertEqual(self.post().json()['revolut']['note'], '7.000 each, 7.000 total.')
+
+    def test_revolut_note_price_token_names_both_bands_for_a_straddling_party(self):
+        """Same honesty as the peso breakdown: a split party is not averaged into one."""
+        configure_event(revolut_tag='dhruvk', revolut_price_cents=None,
+                        revolut_note='{price} each')
+        default_tiers()
+        make_booking(quantity=TIER_TWO_AT - 1, status=Booking.Status.SELF_CONFIRMED)
+        # One seat left in the 5.000 band, so a pair straddles the step.
+        self.assertEqual(self.post(count=2).json()['revolut']['note'],
+                         '5.000 / 7.000 each')
 
     def test_a_lapsed_booking_frees_its_seat_but_not_its_price(self):
         """The core of a monotonic ladder, and the reason capacity and price are read

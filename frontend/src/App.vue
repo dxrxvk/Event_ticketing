@@ -34,7 +34,7 @@ const covered = ref(Boolean(event.posterUrl))
 <template>
   <div class="app">
     <main class="page">
-      <EventHero :covered="covered" @open="covered = false" />
+      <EventHero :covered="covered" :availability="availability" @open="covered = false" />
 
       <Transition name="fade">
         <div v-if="!covered">
@@ -67,6 +67,7 @@ const covered = ref(Boolean(event.posterUrl))
                 key="form"
                 :submitting="submitting"
                 :field-errors="fieldErrors"
+                :availability="availability"
                 @submit="submit"
               />
 

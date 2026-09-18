@@ -8,6 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import Booking, EventSettings, Guest, SongRequest, seats_taken
+from .money import format_ars
 
 
 class BookingError(Exception):
@@ -91,13 +92,26 @@ def create_booking(*, buyer_name, buyer_whatsapp, guests, buyer_email='',
         if taken + quantity > event_settings.capacity:
             raise SoldOut(max(event_settings.capacity - taken, 0))
 
+        # Price the seats inside the same lock that just counted them, so the tier a
+        # buyer is quoted is the tier their seats actually are. Priced here and never
+        # again: the quote is frozen on the row because the buyer is about to read it
+        # off the pay screen and type it into a bank. Re-deriving it at confirm would
+        # let the ladder move under someone who already sent the money.
+        #
+        # `taken` is reused rather than recomputed -- it is the same number
+        # next_seat_position() would return, and asking twice inside one lock invites
+        # the two answers to drift the day one of them grows a condition.
+        breakdown, total, revolut_total = event_settings.price_seats(taken, quantity)
+
         booking = Booking.objects.create(
             buyer_name=buyer_name,
             buyer_whatsapp=buyer_whatsapp,
             buyer_email=buyer_email,
             sender_account_name=sender_account_name,
             quantity=quantity,
-            total_amount=event_settings.ticket_price_cents * quantity,
+            total_amount=total,
+            price_breakdown=breakdown,
+            revolut_amount_cents=revolut_total or None,
         )
         # bulk_create skips Guest.clean(), which is correct here: the capacity check
         # above already ran under the lock, and clean() is the guard for the admin path.
@@ -185,10 +199,32 @@ def availability(event_settings=None):
     event_settings = event_settings or EventSettings.load()
     taken = seats_taken(event_settings)
     remaining = max(event_settings.capacity - taken, 0)
+    # One read of the tier table, reused for both the ladder and the current price.
+    # price_seats() would fetch it again, and this endpoint is polled.
+    ladder = event_settings.price_ladder()
+    current_price = next(
+        (band['price_cents'] for band in ladder if taken + 1 <= band['to_seat']),
+        ladder[-1]['price_cents'],
+    )
     return {
         'capacity': event_settings.capacity,
         'taken': taken,
         'remaining': remaining,
+        # The ladder, so the page can show what the next ticket costs and what the rest
+        # will cost, without the frontend hardcoding prices that an admin edit changes.
+        # `next_seat` is 1-based because that is how the ladder reads to a human.
+        'tiers': [
+            {
+                'from_seat': band['from_seat'],
+                'to_seat': band['to_seat'],
+                'price_cents': band['price_cents'],
+                'price_display': format_ars(band['price_cents']),
+            }
+            for band in ladder
+        ],
+        'next_seat': taken + 1,
+        'current_price_cents': current_price,
+        'current_price_display': format_ars(current_price),
         'sold_out': remaining == 0,
         'sales_open': event_settings.sales_are_open(),
         'list_deadline': event_settings.list_deadline,

@@ -67,7 +67,14 @@ def revolut_payload(booking, event_settings):
         and event_settings.revolut_price_cents
     ):
         return None
-    amount = event_settings.revolut_price_cents * booking.quantity
+    # The figure quoted when the booking was priced, so a Revolut payer is held to the
+    # tier they bought in exactly like a peso payer. Falls back to the flat product for
+    # rows created before the quote was stored.
+    amount = (
+        booking.revolut_amount_cents
+        if booking.revolut_amount_cents is not None
+        else event_settings.revolut_price_cents * booking.quantity
+    )
     return {
         'tag': event_settings.revolut_tag,
         'link': f'https://revolut.me/{event_settings.revolut_tag}',
@@ -93,6 +100,20 @@ def pay_screen_payload(booking, event_settings):
         # Argentine format, deliberately: this number is read off the screen and typed
         # into an Argentine banking app.
         'amount_display': format_ars(booking.total_amount),
+        # The quote, line by line. A party that straddles a tier boundary owes two
+        # different unit prices, and "24.000" with no explanation reads like a mistake
+        # to someone who was told tickets cost 5.000.
+        'price_breakdown': [
+            {
+                'from_seat': line['from_seat'],
+                'to_seat': line['to_seat'],
+                'quantity': line['quantity'],
+                'unit_price_cents': line['unit_price_cents'],
+                'unit_price_display': format_ars(line['unit_price_cents']),
+            }
+            for line in (booking.price_breakdown or [])
+        ],
+        'pricing_display': booking.pricing_display,
         'alias': event_settings.alias,
         'cvu': event_settings.cvu,
         'account_holder_name': event_settings.account_holder_name,

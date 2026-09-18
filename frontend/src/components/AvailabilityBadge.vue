@@ -19,7 +19,10 @@ const label = computed(() => {
   if (!a) return ''
   if (a.sales_open === false) return 'Bookings closed'
   if (a.sold_out) return 'Sold out'
-  return `${a.remaining} of ${a.capacity} spots left`
+  // The current price rides along with the count: scarcity and price move together
+  // here, and seeing both is what makes "book now" a reason rather than a nag.
+  const seats = `${a.remaining} of ${a.capacity} spots left`
+  return a.current_price_display ? `${seats} · now ${a.current_price_display}` : seats
 })
 </script>
 

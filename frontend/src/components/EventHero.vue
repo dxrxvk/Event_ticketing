@@ -7,6 +7,8 @@ import EventDetails from './EventDetails.vue'
 const props = defineProps({
   // True while the page shows only the poster. Meaningless without a poster.
   covered: { type: Boolean, default: false },
+  // Passed straight through to EventDetails, which shows the live price from it.
+  availability: { type: Object, default: null },
 })
 const emit = defineEmits(['open'])
 
@@ -30,7 +32,7 @@ watch(
       The poster is an upgrade, not a dependency. Without one there is no cover and no
       card: the details stand alone and the page is designed to look finished that way.
     -->
-    <EventDetails v-if="!hasPoster" />
+    <EventDetails v-if="!hasPoster" :availability="availability" />
 
     <div v-else class="flip">
       <div class="flip__card" :class="{ 'is-open': !covered }">
@@ -53,7 +55,7 @@ watch(
         </div>
 
         <div class="flip__face flip__back" :inert="covered" :aria-hidden="covered">
-          <EventDetails ref="details" />
+          <EventDetails ref="details" :availability="availability" />
         </div>
       </div>
 

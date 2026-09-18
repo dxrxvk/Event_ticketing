@@ -7,6 +7,9 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+# money.py imports nothing from this app, so this cannot be circular.
+from .money import format_ars
+
 # 9 bytes -> 72 bits of entropy -> a 12-character url-safe string. The reference is shown
 # to the buyer and may appear in a URL, so it must not be guessable: a sequential pk would
 # let anyone enumerate their coworkers' bookings.
@@ -38,7 +41,9 @@ class EventSettings(models.Model):
     )
     ticket_price_cents = models.PositiveIntegerField(
         default=500_000,
-        help_text='Integer cents. 500000 = 5.000 pesos. Flat price for everyone.',
+        help_text='Integer cents. 500000 = 5.000 pesos. The price of the FIRST tier -- '
+                  'what a ticket costs until the first PriceTier threshold is passed. '
+                  'With no tiers configured this is a flat price for everyone.',
     )
 
     # Payment destination, shown on the pay screen. The API response is authoritative:
@@ -136,6 +141,161 @@ class EventSettings(models.Model):
             return True
         return (now or timezone.now()) < self.sales_close_at
 
+    # ------------------------------------------------------------------ pricing
+
+    def next_seat_position(self, now=None):
+        """How many seats are already spoken for, i.e. the 0-based index of the seat
+        the next ticket sold will be.
+
+        **The one place that decides which tier a new booking is priced in.** It is
+        deliberately the same count capacity is enforced on (`seats_taken()`), so the
+        50th ticket sold is the 50th ticket charged for -- the price ladder and the
+        guest list can never describe different events.
+
+        If the seat rule ever changes (a pending booking ceasing to hold a seat, say),
+        change it here and the ladder follows. Nothing else computes a position.
+        """
+        return seats_taken(self, now)
+
+    def price_ladder(self):
+        """The ladder as inclusive 1-based seat ranges, cheapest first.
+
+        `[{'from_seat': 1, 'to_seat': 50, 'price_cents': 500000}, ...]` -- the shape the
+        organiser and the buyer both think in ("the first 50 are 5.000"), derived from
+        the thresholds actually stored. Storing ranges instead would mean storing the
+        same boundary twice and watching them drift.
+
+        The last band runs to `capacity`; with no tiers it is the whole event at the
+        base price.
+        """
+        tiers = list(self.price_tiers.all())
+        bands = []
+        price = self.ticket_price_cents
+        start = 1
+        for tier in tiers:
+            # A threshold at or past capacity can never be reached, so it is not a band.
+            if tier.starts_after_seats >= self.capacity:
+                break
+            bands.append({
+                'from_seat': start,
+                'to_seat': tier.starts_after_seats,
+                'price_cents': price,
+                'revolut_price_cents': self._revolut_price_for(price),
+            })
+            price = tier.price_cents
+            start = tier.starts_after_seats + 1
+        bands.append({
+            'from_seat': start,
+            'to_seat': max(self.capacity, start),
+            'price_cents': price,
+            'revolut_price_cents': self._revolut_price_for(price),
+        })
+        return bands
+
+    def _revolut_price_for(self, ars_price_cents):
+        """The Revolut figure for a band priced at `ars_price_cents`.
+
+        Scaled from the base pair so the two rails stay in step without asking the
+        organiser to maintain a second ladder by hand: at 2x the peso price a Revolut
+        payer owes 2x the Revolut price. Integer arithmetic, rounded to the nearest
+        minor unit -- never float, like every other amount here.
+
+        Returns 0 when Revolut is unpriced, which hides the block entirely.
+        """
+        if not self.revolut_price_cents or not self.ticket_price_cents:
+            return self.revolut_price_cents
+        return round(self.revolut_price_cents * ars_price_cents / self.ticket_price_cents)
+
+    def price_seats(self, position, quantity):
+        """Price `quantity` consecutive seats starting at 0-based seat `position`.
+
+        Returns `(breakdown, total_cents, revolut_total_cents)`. A party that straddles
+        a boundary is split across bands -- two seats at 5.000 and two at 7.000 -- which
+        is the literal meaning of "the first 50 tickets are 5.000". Charging the whole
+        party at either end's price would mean the 50th ticket's price depended on who
+        happened to be standing next to it.
+
+        Seats past the last band (possible when a refused confirm leaves pending rows
+        inflating the position, or when capacity is lowered) take the last band's price
+        rather than raising: pricing must never be the thing that fails. Capacity is
+        enforced separately, and it is what refuses the booking.
+        """
+        bands = self.price_ladder()
+        breakdown = []
+        seat = position + 1  # 1-based, the way the ladder reads
+        left = quantity
+        for band in bands:
+            if left <= 0:
+                break
+            if seat > band['to_seat']:
+                continue
+            take = min(left, band['to_seat'] - seat + 1)
+            breakdown.append({
+                'from_seat': seat,
+                'to_seat': seat + take - 1,
+                'unit_price_cents': band['price_cents'],
+                'unit_revolut_cents': band['revolut_price_cents'],
+                'quantity': take,
+            })
+            seat += take
+            left -= take
+        if left > 0:
+            # Past the end of the ladder: the last band's price continues.
+            last = bands[-1]
+            breakdown.append({
+                'from_seat': seat,
+                'to_seat': seat + left - 1,
+                'unit_price_cents': last['price_cents'],
+                'unit_revolut_cents': last['revolut_price_cents'],
+                'quantity': left,
+            })
+        total = sum(line['unit_price_cents'] * line['quantity'] for line in breakdown)
+        revolut_total = sum(
+            line['unit_revolut_cents'] * line['quantity'] for line in breakdown
+        )
+        return breakdown, total, revolut_total
+
+    def current_price_cents(self, now=None):
+        """What one ticket costs right now. Display only -- a real booking is priced by
+        price_seats() under the lock, because the answer moves."""
+        _, total, _ = self.price_seats(self.next_seat_position(now), 1)
+        return total
+
+
+class PriceTier(models.Model):
+    """A step in the price ladder: "after N seats are sold, a ticket costs X".
+
+    Stored as a threshold rather than a band size so there is exactly one number per
+    step and nothing to reconcile: the band a tier opens runs until the next threshold,
+    or until capacity. The first band's price is EventSettings.ticket_price_cents, so an
+    event with no tiers behaves exactly as it did when the price was flat.
+
+    This is a ladder every buyer can read off the page, not per-buyer variation -- the
+    thing this project refuses. Two people buying the 51st and 52nd tickets pay the same.
+    """
+
+    event = models.ForeignKey(
+        EventSettings,
+        related_name='price_tiers',
+        on_delete=models.CASCADE,
+    )
+    starts_after_seats = models.PositiveIntegerField(
+        unique=True,
+        validators=[MinValueValidator(1)],
+        help_text='This price applies from the NEXT seat on. 50 means seats 51 and up.',
+    )
+    price_cents = models.PositiveIntegerField(
+        help_text='Integer cents. 700000 = 7.000 pesos.',
+    )
+
+    class Meta:
+        ordering = ('starts_after_seats',)
+        verbose_name = 'price tier'
+        verbose_name_plural = 'price tiers'
+
+    def __str__(self):
+        return f'from seat {self.starts_after_seats + 1}: {format_ars(self.price_cents)}'
+
 
 class Booking(models.Model):
     class Status(models.TextChoices):
@@ -176,7 +336,21 @@ class Booking(models.Model):
         help_text='Derived from the guest list; never accepted from the client.',
     )
     total_amount = models.PositiveIntegerField(
-        help_text='Integer cents. ticket_price_cents * quantity, nothing added.',
+        help_text='Integer cents. The sum of the tier prices for the seats this booking '
+                  'was quoted, nothing added. Frozen at creation.',
+    )
+    price_breakdown = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='The quote, per tier band: seats, unit price, how many. A party that '
+                  'straddles a boundary has more than one line. Read-only evidence of '
+                  'what the buyer was shown.',
+    )
+    revolut_amount_cents = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='The Revolut figure quoted at the same moment, in minor units. Null '
+                  'for bookings made before Revolut was priced.',
     )
 
     status = models.CharField(
@@ -231,6 +405,28 @@ class Booking(models.Model):
         if self.status != Booking.Status.PENDING:
             return False
         return self.created_at > EventSettings.load().pending_cutoff()
+
+    @property
+    def pricing_display(self):
+        """'2 x 5.000 + 2 x 7.000', or just '5.000' when it is all one tier.
+
+        The organiser's answer to "why does this booking owe 24.000?" without opening
+        the JSON. Falls back to the flat division for rows created before tiers existed.
+        """
+        if not self.price_breakdown:
+            if not self.quantity:
+                return format_ars(self.total_amount)
+            return format_ars(self.total_amount // self.quantity)
+        parts = []
+        for line in self.price_breakdown:
+            price = format_ars(line['unit_price_cents'])
+            count = line['quantity']
+            parts.append(f'{count} x {price}' if count > 1 else price)
+        return ' + '.join(parts)
+
+    @property
+    def spans_multiple_tiers(self):
+        return len(self.price_breakdown or []) > 1
 
     @property
     def refund_state(self):

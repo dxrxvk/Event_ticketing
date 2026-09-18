@@ -140,10 +140,12 @@ class ApiBurstTests(ThrottleResetMixin, TestCase):
 
     def test_availability_query_count_does_not_grow_with_the_guest_list(self):
         configure_event(capacity=10_000)
-        with self.assertNumQueries(2):  # load the settings row, count live guests
+        # Settings row, live-guest count, price tiers. Three constant queries: the
+        # point of this test is that none of them is per-booking or per-guest.
+        with self.assertNumQueries(3):
             self.client.get(AVAILABILITY_URL)
         self._seed_many_bookings(300)
-        with self.assertNumQueries(2):
+        with self.assertNumQueries(3):
             response = self.client.get(AVAILABILITY_URL)
         self.assertEqual(response.data['taken'], 900)
 

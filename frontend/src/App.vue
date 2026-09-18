@@ -7,6 +7,7 @@ import BookingForm from './components/BookingForm.vue'
 import ConfirmedPanel from './components/ConfirmedPanel.vue'
 import EventHero from './components/EventHero.vue'
 import PayPanel from './components/PayPanel.vue'
+import PriceTiers from './components/PriceTiers.vue'
 import StatusNotice from './components/StatusNotice.vue'
 import { useBooking } from './composables/useBooking.js'
 import { event, whatsappLink } from './event.config.js'
@@ -41,6 +42,14 @@ const covered = ref(Boolean(event.posterUrl))
           <div class="app__status">
             <AvailabilityBadge :availability="availability" />
           </div>
+
+          <!-- Only while choosing. On the pay and confirmed screens the buyer already
+               has a price, and the ladder would be noise next to the amount they owe. -->
+          <PriceTiers
+            v-if="step === 'form' && canBook"
+            :availability="availability"
+            class="app__tiers"
+          />
 
           <StatusNotice v-if="notice" :notice="notice" class="app__notice" />
 
@@ -106,6 +115,7 @@ const covered = ref(Boolean(event.posterUrl))
 .app { min-height: 100dvh; padding-bottom: var(--space-9); }
 
 .app__status { margin-top: var(--space-5); }
+.app__tiers { margin-top: var(--space-5); }
 .app__notice { margin-top: var(--space-5); }
 .app__body { margin-top: var(--space-6); }
 

@@ -88,19 +88,24 @@ def create_booking(*, buyer_name, buyer_whatsapp, guests, buyer_email='',
         if existing is not None:
             return existing, False
 
-        # One count, used for both decisions, so the seat a buyer is charged for is
-        # literally the seat capacity admitted them to. Calling next_seat_position()
-        # rather than seats_taken() directly is the point: it is the single definition
-        # of "which seat is next", and a change there has to reach this path or the
-        # ladder and the guest list start describing different events.
-        taken = event_settings.next_seat_position()
+        # One count, two different questions asked of it.
+        #
+        # CAPACITY asks how full the room is *now*, so it uses occupancy directly. A
+        # seat freed by a lapsed or cancelled booking is genuinely available again, and
+        # pricing must never be what stops someone booking into an empty room.
+        taken = seats_taken(event_settings)
         if taken + quantity > event_settings.capacity:
             raise SoldOut(max(event_settings.capacity - taken, 0))
+
+        # PRICE asks how far the event has got, which only ever goes up. Freed seats
+        # come back for sale at the price the ladder has reached, not at the price they
+        # were first offered at. See EventSettings.price_position().
+        position = event_settings.price_position(taken)
 
         # Priced inside the same lock that just counted, then frozen on the row and
         # never re-derived: the buyer is about to read this figure off the pay screen
         # and type it into a bank, so the ladder must not move under them at confirm.
-        breakdown, total, revolut_total = event_settings.price_seats(taken, quantity)
+        breakdown, total, revolut_total = event_settings.price_seats(position, quantity)
 
         booking = Booking.objects.create(
             buyer_name=buyer_name,
@@ -117,6 +122,11 @@ def create_booking(*, buyer_name, buyer_whatsapp, guests, buyer_email='',
         Guest.objects.bulk_create(
             Guest(booking=booking, full_name=g['full_name'].strip()) for g in guests
         )
+
+        # The ladder has now reached the far end of this booking. Recorded under the
+        # lock, so two simultaneous buyers cannot be sold the same rung: whichever
+        # commits second reads the first one's mark.
+        event_settings.advance_price_position(position + quantity)
 
     return booking, True
 
@@ -198,11 +208,16 @@ def availability(event_settings=None):
     event_settings = event_settings or EventSettings.load()
     taken = seats_taken(event_settings)
     remaining = max(event_settings.capacity - taken, 0)
+    # Seats remaining come from occupancy; the price comes from how far the ladder has
+    # climbed. The two can legitimately disagree -- 130 spots free at 7.000 is a real
+    # state after a wave of abandoned bookings -- and quoting `taken` here would
+    # advertise a price the booking endpoint will not honour.
+    position = event_settings.price_position(taken)
     # One read of the tier table, reused for both the ladder and the current price.
     # price_seats() would fetch it again, and this endpoint is polled.
     ladder = event_settings.price_ladder()
     current_price = next(
-        (band['price_cents'] for band in ladder if taken + 1 <= band['to_seat']),
+        (band['price_cents'] for band in ladder if position + 1 <= band['to_seat']),
         ladder[-1]['price_cents'],
     )
     return {
@@ -221,7 +236,7 @@ def availability(event_settings=None):
             }
             for band in ladder
         ],
-        'next_seat': taken + 1,
+        'next_seat': position + 1,
         'current_price_cents': current_price,
         'current_price_display': format_ars(current_price),
         'sold_out': remaining == 0,

@@ -22,7 +22,7 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 123 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  and 136 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules (including the price ladder and its own race class);
   `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention. 11 tests skip on SQLite by design — see
@@ -123,13 +123,26 @@ event.
     per step and nothing to reconcile) and `price_cents`. No tiers configured is exactly
     the old flat behaviour, and `PriceLadderTests.test_no_tiers_is_the_old_flat_price`
     guards that.
-  - **Which band a booking gets is decided by `EventSettings.next_seat_position()`,** and
-    that is deliberately the same count capacity is enforced on (`seats_taken()`). The Nth
-    ticket sold must be the Nth ticket charged for. Nothing else computes a position.
-    It is one method precisely so the seat rule can change without hunting: **if a
-    `pending` booking ever stops holding a seat, position must still count live pending
-    rows here**, or a launch burst (everyone submits before anyone confirms) quotes the
-    whole room the cheapest band and the ladder never advances.
+  - **Which band a booking gets is decided by `EventSettings.price_position(taken)`,**
+    and nothing else computes a position. It is one method precisely so the seat rule
+    can change without hunting: **if a `pending` booking ever stops holding a seat,
+    position must still count live pending rows**, or a launch burst (everyone submits
+    before anyone confirms) quotes the whole room the cheapest band.
+  - **The ladder is monotonic, and that is why capacity and price read two different
+    numbers.** `capacity` is enforced on current occupancy (`seats_taken()`); price is
+    the **high-water mark** of occupancy, stored on `EventSettings.seats_high_water`
+    and advanced under the same lock that prices the booking. A lapsed or cancelled
+    booking therefore frees its *seat* but not its *price*: the seat goes back on sale
+    at the price the event has reached. Without this the ladder walks backwards — 50
+    people fill the form at launch, the next buyer is quoted 7.000, thirty abandon, and
+    a later buyer is quoted 5.000 again, so the event sells far more than 50 tickets at
+    5.000. Decided 2026-09-18 after the alternative was offered and rejected.
+    - **Pricing must never refuse a booking.** The position can climb past `capacity`
+      after enough churn; `price_seats()` keeps quoting the last band rather than
+      raising, and only the occupancy check refuses. The room can always be filled.
+    - The accepted cost is that abandoned cheap seats are not re-offered cheaply.
+      `seats_high_water` is editable in the admin so a bulk cancellation can be
+      forgiven deliberately, which is the only supported way to move the ladder down.
   - **The quote is frozen on the row at create** (`total_amount`, `price_breakdown`,
     `revolut_amount_cents`), inside the same lock that counted the seats. It is never
     re-derived at confirm: the buyer already read that figure off the pay screen and

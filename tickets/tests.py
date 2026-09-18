@@ -9,7 +9,7 @@ from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from . import exports, services
+from . import admin, exports, services
 from .models import Booking, EventSettings, Guest, SongRequest, seats_taken
 from .money import format_ars, format_minor_units
 
@@ -389,6 +389,111 @@ class AdminAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Drake - One Dance')
         self.assertContains(response, booking.reference)
+
+
+# Renders admin changelists, so the same manifest-storage escape as AdminAccessTests.
+@override_settings(STORAGES={
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+})
+class SeatLightTests(TestCase):
+    """The Seat column's traffic light.
+
+    Green means the seat is held, orange means we are waiting for the buyer to say they
+    transferred, red means the row holds nothing. The risk this guards is the light
+    disagreeing with seats_taken(): a row shown green that the capacity count treats as
+    free oversells the room, and one shown red that it counts sells a seat twice.
+    """
+
+    def setUp(self):
+        self.settings_row = configure_event()
+        self.cutoff = self.settings_row.pending_cutoff()
+        User.objects.create_superuser('org', 'o@example.com', 'pw')
+        self.client.login(username='org', password='pw')
+
+    def test_every_status_has_a_light(self):
+        # A sixth status added without a colour would otherwise KeyError on the
+        # changelist -- the one page the organiser cannot run the event without.
+        for status in Booking.Status:
+            booking = make_booking(status=status)
+            self.assertIn(admin.seat_rank(booking, self.cutoff), admin.SEAT_LIGHTS)
+
+    def test_the_light_agrees_with_the_capacity_count(self):
+        """Orange and green are exactly the rows seats_taken() charges for."""
+        holding = {
+            admin.SEAT_RANK_VERIFIED,
+            admin.SEAT_RANK_SELF_CONFIRMED,
+            admin.SEAT_RANK_AWAITING,
+        }
+        for status in Booking.Status:
+            for minutes_old in (0, 999):
+                Booking.objects.all().delete()
+                booking = make_booking(status=status, minutes_old=minutes_old)
+                lit = admin.seat_rank(booking, EventSettings.load().pending_cutoff())
+                self.assertEqual(
+                    lit in holding,
+                    seats_taken() == 1,
+                    f'{status} aged {minutes_old}m lights as {admin.SEAT_LIGHTS[lit][1]} '
+                    f'but seats_taken() says {seats_taken()}',
+                )
+
+    def test_lapsed_pending_goes_red_not_orange(self):
+        # Its seat is back on sale. Orange would tell the organiser to keep waiting for
+        # money that no longer buys anything.
+        fresh = make_booking(name='Fresh', status=Booking.Status.PENDING)
+        lapsed = make_booking(name='Lapsed', status=Booking.Status.PENDING,
+                              minutes_old=self.settings_row.pending_ttl_minutes + 1)
+        self.assertEqual(admin.seat_rank(fresh, self.cutoff), admin.SEAT_RANK_AWAITING)
+        self.assertEqual(admin.seat_rank(lapsed, self.cutoff), admin.SEAT_RANK_LAPSED)
+
+    def test_sql_ranking_matches_the_python_one(self):
+        """seat_rank_case() and seat_rank() are two spellings of one rule."""
+        for status in Booking.Status:
+            make_booking(name=f'B {status}', status=status)
+        make_booking(name='Lapsed', status=Booking.Status.PENDING,
+                     minutes_old=self.settings_row.pending_ttl_minutes + 1)
+        ranked = Booking.objects.annotate(_seat_rank=admin.seat_rank_case())
+        for booking in ranked:
+            self.assertEqual(booking._seat_rank,
+                             admin.seat_rank(booking, self.cutoff),
+                             f'{booking.buyer_name} ({booking.status})')
+
+    def test_relation_prefix_ranks_through_the_booking(self):
+        # What the Guest and SongRequest lists rely on.
+        make_booking(name='Green', status=Booking.Status.VERIFIED)
+        ranked = Guest.objects.annotate(_seat_rank=admin.seat_rank_case('booking__'))
+        self.assertEqual(ranked.first()._seat_rank, admin.SEAT_RANK_VERIFIED)
+
+    def test_labels_render_on_every_changelist(self):
+        booking = make_booking(status=Booking.Status.VERIFIED)
+        SongRequest.objects.create(booking=booking, position=1, text='Soda Stereo')
+        make_booking(name='Waiting', status=Booking.Status.PENDING)
+        make_booking(name='Gone', status=Booking.Status.CANCELLED)
+        for url in ('/admin/tickets/booking/', '/admin/tickets/guest/',
+                    '/admin/tickets/songrequest/'):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, url)
+            self.assertContains(response, 'Verified', msg_prefix=url)
+        response = self.client.get('/admin/tickets/booking/')
+        self.assertContains(response, 'Awaiting payment')
+        self.assertContains(response, 'No seat')
+
+    def test_the_label_is_there_without_the_colour(self):
+        # Colour alone must not carry the meaning: a red/green reader sees two identical
+        # dots, and the dot is decorative to a screen reader.
+        make_booking(status=Booking.Status.PENDING)
+        response = self.client.get('/admin/tickets/booking/')
+        self.assertContains(response, 'aria-hidden="true"')
+        self.assertContains(response, 'Awaiting payment')
+
+    def test_the_seat_column_sorts_by_colour_band(self):
+        make_booking(name='Red', status=Booking.Status.CANCELLED)
+        make_booking(name='Green', status=Booking.Status.VERIFIED)
+        make_booking(name='Orange', status=Booking.Status.PENDING)
+        ranked = (Booking.objects
+                  .annotate(_seat_rank=admin.seat_rank_case())
+                  .order_by('-_seat_rank'))
+        self.assertEqual([b.buyer_name for b in ranked], ['Green', 'Orange', 'Red'])
 
 
 @skipUnless(

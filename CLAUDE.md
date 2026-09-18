@@ -74,8 +74,8 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
   Revolut is off until the tag plus either a note or a currency+price pair are set — the
   price is optional and normally left blank, so fill `revolut_note` instead (suggested:
   `ARS moves daily, so send the equivalent of {total} ARS in USD or GBP and message me
-  once you have.`). Confirm the start time
-  (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local).
+  once you have.`). Set the **venue** and **start time** on the same admin page — the
+  page reads both from `/api/availability/` and shows "TBD" while they are blank.
   `RUNBOOK.md` is the organiser's event-day checklist. The poster (`public/poster.webp`)
   and preview crop (`public/og.jpg`, 1200x630) are in. Keep `og.jpg` present: the Worker serves the SPA fallback for unknown paths, so a
   missing `/og.jpg` returns `200 text/html` instead of `404`, the preview silently has no
@@ -268,7 +268,13 @@ Backend and frontend are deliberately separate deployments:
     **"Estimated total"** and the server's `amount_display` is authoritative on the pay
     screen. `quoteFor()` in `event.config.js` mirrors `price_seats()` in `models.py`.
     The **payment destination is not** baked in — alias, CVU and account holder come from
-    the API so a mistyped alias is an admin edit, not a redeploy.
+    the API so a mistyped alias is an admin edit, not a redeploy. **Neither are the venue
+    and start time**, since both are decided late: `/api/availability/` carries `venue`
+    and `event_date` from `EventSettings`, and `eventDateParts()` / `venueDisplay()` in
+    `event.config.js` prefer those over the baked values. The baked `venue` is `'TBD'`
+    and `dateISO` is **date-only** — no invented hour — parsed at midday in the -03:00
+    offset because `new Date('2026-10-03')` is UTC midnight, i.e. the 2nd in Buenos
+    Aires. Blank in the admin renders "TBD", never a guess.
   - **All colour and type live in `src/styles/tokens.css`.** Restyling to match the event
     poster means editing that one file. Tokens are named semantically (`--accent`,
     `--surface`), never literally, so a swap does not leave lying names.

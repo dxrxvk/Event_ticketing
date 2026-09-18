@@ -15,13 +15,19 @@ export const event = {
   name: 'Multiculture Mixer',
   tagline: 'A night of global genres, sounds and vibes. Rep your flag, share your culture, make new friends.',
 
-  // ISO 8601 with the Buenos Aires offset (-03:00).
-  // Date is 03/10 off the poster, read day-first: 3 October 2026.
-  // THE TIME IS A PLACEHOLDER -- the poster does not state one. Confirm 21:00.
-  dateISO: '2026-10-03T21:00:00-03:00',
+  // DATE ONLY, deliberately. 03/10 off the poster, read day-first: 3 October 2026. The
+  // poster states no time and none has been decided, so no time is baked in -- a
+  // made-up "21:00" here would be read as fact by the first person to open the link.
+  // The real start time comes from the admin's `event_date` via /api/availability/
+  // and overwrites this the moment it answers; until then the page says "TBD".
+  dateISO: '2026-10-03',
 
-  venue: 'Venue Name',
-  venueArea: 'Neighbourhood, Buenos Aires',
+  // The venue is still being decided, so this is what the page shows until the
+  // organiser types one into the admin. It comes from /api/availability/ and
+  // overwrites this on arrival -- like the alias and CVU, an edit must not need a
+  // redeploy. Blank hides the area line entirely.
+  venue: 'TBD',
+  venueArea: '',
 
   // Display only, and only until /api/availability/ answers with the real ladder --
   // the API is the single source of truth for money, and an admin edit must not need a
@@ -41,8 +47,10 @@ export const event = {
   // public/og.jpg is the WhatsApp preview crop and is referenced from index.html only.
   posterUrl: '/poster.webp',
 
-  // Digits only, no + or spaces. Used for wa.me links on every dead end.
-  organiserWhatsapp: '',
+  // Digits only, no + or spaces. Used for wa.me links on every dead end. Same number
+  // the API serves as organiser_whatsapp; baked in too so the links work before the
+  // backend wakes.
+  organiserWhatsapp: '447804472377',
 
   // Shown under the form. Blank hides the line.
   listDeadlineNote: 'Bookings after the guest list goes to the venue may not make it.',
@@ -55,11 +63,32 @@ const timeFormatter = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TIMEZONE,
 })
 
-/** One stored date, formatted on the fly -- no second field to drift out of sync. */
-export function eventDateParts() {
-  const date = new Date(event.dateISO)
+/**
+ * When the event is, preferring the admin's `event_date` once /api/availability/ has
+ * answered. `time` is '' while no start time is known, and callers render "TBD" for
+ * it -- never a guessed hour.
+ *
+ * The baked fallback is date-only. It is parsed at midday in the event's own offset
+ * on purpose: `new Date('2026-10-03')` is UTC midnight, which in Buenos Aires (-03:00)
+ * is still the evening of the 2nd, and the page would name the wrong day. Argentina
+ * has no DST, so the fixed offset is safe.
+ */
+export function eventDateParts(availability = null) {
+  const fromApi = availability?.event_date
+  if (fromApi) {
+    const date = new Date(fromApi)
+    if (!Number.isNaN(date.valueOf())) {
+      return { day: dateFormatter.format(date), time: timeFormatter.format(date) }
+    }
+  }
+  const date = new Date(`${event.dateISO}T12:00:00-03:00`)
   if (Number.isNaN(date.valueOf())) return { day: '', time: '' }
-  return { day: dateFormatter.format(date), time: timeFormatter.format(date) }
+  return { day: dateFormatter.format(date), time: '' }
+}
+
+/** Where the event is: the admin's venue once known, else the baked placeholder. */
+export function venueDisplay(availability = null) {
+  return availability?.venue?.trim() || event.venue
 }
 
 export function whatsappLink(message = '') {

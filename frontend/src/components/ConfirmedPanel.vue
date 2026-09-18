@@ -1,11 +1,14 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import AppButton from './AppButton.vue'
-import { event, eventDateParts } from '../event.config.js'
+import { event, eventDateParts, venueDisplay } from '../event.config.js'
 
 const props = defineProps({
   booking: { type: Object, required: true },
+  // The admin's venue and start time ride in on availability; this screen is the one
+  // a buyer screenshots, so it must show the real values, not the baked "TBD".
+  availability: { type: Object, default: null },
   songs: { type: Array, required: true },
   songsSaving: { type: Boolean, default: false },
   songsSaved: { type: Boolean, default: false },
@@ -13,7 +16,8 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:songs', 'save-songs'])
 
-const when = eventDateParts()
+const when = computed(() => eventDateParts(props.availability))
+const venue = computed(() => venueDisplay(props.availability))
 
 // "Saved" only until the next keystroke, so the button always says what it will do.
 const touched = ref(false)
@@ -41,11 +45,11 @@ function setSong(index, value) {
     <dl class="summary">
       <div class="summary__row">
         <dt class="eyebrow">When</dt>
-        <dd>{{ when.day }}, {{ when.time }}</dd>
+        <dd>{{ when.day }}, {{ when.time || 'time TBD' }}</dd>
       </div>
       <div class="summary__row">
         <dt class="eyebrow">Where</dt>
-        <dd>{{ event.venue }}</dd>
+        <dd>{{ venue }}</dd>
       </div>
       <div class="summary__row">
         <dt class="eyebrow">Reference</dt>

@@ -92,6 +92,7 @@ const covered = ref(Boolean(event.posterUrl))
                 v-else
                 key="done"
                 :booking="booking"
+                :availability="availability"
                 :songs="songs"
                 :songs-saving="songsSaving"
                 :songs-saved="songsSaved"

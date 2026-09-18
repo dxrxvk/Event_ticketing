@@ -243,4 +243,11 @@ def availability(event_settings=None):
         'sales_open': event_settings.sales_are_open(),
         'list_deadline': event_settings.list_deadline,
         'organiser_whatsapp': event_settings.organiser_whatsapp,
+        # Venue and start time are decided late and may still change, so they come from
+        # the admin rather than the frontend build. The page bakes in "TBD" and the
+        # poster's date, and overwrites both from here once this answers -- the same
+        # arrangement as the payment destination, for the same reason: an edit here must
+        # not need a redeploy. Blank means "not decided yet", and the page says so.
+        'venue': event_settings.venue,
+        'event_date': event_settings.event_date,
     }

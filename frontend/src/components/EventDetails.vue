@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 
 import {
-  bakedLadder, event, eventDateParts, formatPesos, ladderFrom,
+  bakedLadder, event, eventDateParts, formatPesos, ladderFrom, venueDisplay,
 } from '../event.config.js'
 
 const props = defineProps({
@@ -11,7 +11,10 @@ const props = defineProps({
   availability: { type: Object, default: null },
 })
 
-const when = eventDateParts()
+// Computed, not called once: the venue and start time arrive with availability and
+// the page must follow the admin's answer without a reload.
+const when = computed(() => eventDateParts(props.availability))
+const venue = computed(() => venueDisplay(props.availability))
 
 const ladder = computed(() => ladderFrom(props.availability) ?? bakedLadder())
 
@@ -42,13 +45,14 @@ defineExpose({
         <dt class="eyebrow">When</dt>
         <dd>
           {{ when.day }}
-          <span class="facts__sub">{{ when.time }}</span>
+          <!-- "TBD" rather than a guessed hour: no start time is baked in. -->
+          <span class="facts__sub">{{ when.time || 'Time TBD' }}</span>
         </dd>
       </div>
       <div class="facts__row">
         <dt class="eyebrow">Where</dt>
         <dd>
-          {{ event.venue }}
+          {{ venue }}
           <span v-if="event.venueArea" class="facts__sub">{{ event.venueArea }}</span>
         </dd>
       </div>

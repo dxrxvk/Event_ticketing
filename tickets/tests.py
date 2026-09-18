@@ -1,6 +1,6 @@
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from unittest import skipUnless
 
 from django.contrib.auth.models import User
@@ -447,6 +447,21 @@ class ReadEndpointTests(TestCase):
         self.client.get('/api/availability/')
         stale.refresh_from_db()
         self.assertEqual(stale.status, Booking.Status.PENDING)
+
+    def test_availability_carries_the_venue_and_start_time_from_the_admin(self):
+        # Both are decided late and shown on the page and the confirmation screen, so
+        # they come from here rather than the frontend build -- an edit in the admin
+        # must not need a redeploy.
+        configure_event(venue='', event_date=None)
+        body = self.client.get('/api/availability/').json()
+        self.assertEqual(body['venue'], '')
+        self.assertIsNone(body['event_date'])
+
+        when = datetime(2026, 10, 3, 22, 30, tzinfo=UTC)
+        configure_event(venue='The Temple', event_date=when)
+        body = self.client.get('/api/availability/').json()
+        self.assertEqual(body['venue'], 'The Temple')
+        self.assertEqual(datetime.fromisoformat(body['event_date']), when)
 
 
 # Same reason as ExportTests below: admin pages use {% static %}, and the manifest

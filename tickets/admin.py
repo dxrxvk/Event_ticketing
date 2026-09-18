@@ -1,21 +1,129 @@
 from datetime import timedelta
 
 from django.contrib import admin
-from django.db.models import BooleanField, Case, Count, Q, Value, When
+from django.db.models import Case, Count, IntegerField, Value, When
 from django.shortcuts import render
 from django.urls import path
 from django.utils import timezone
+from django.utils.html import format_html
 
 from . import exports
 from .models import (
     MAX_SONG_REQUESTS, Booking, EventSettings, Guest, PriceTier, SongRequest,
     seats_remaining, seats_taken,
+    MAX_SONG_REQUESTS, Booking, EventSettings, Guest, SongRequest,
+    fresh_pending_filter, seats_remaining, seats_taken,
 )
 from .money import format_ars
 
 # A self-confirmed booking never expires (the buyer is trusted), so one that stays
 # unverified for this long is the realistic way seats and attention get hoarded.
 STALE_CONFIRMED_DAYS = 3
+
+# The seat traffic light.
+#
+# Rank, colour and label all come from this one table, and every admin that shows a
+# booking's state renders it through render_seat_light(). Three readings, in the
+# organiser's own words: green means the buyer says the money is sent and the seat is
+# held, orange means we are still waiting for them to say it, red means the row holds
+# nothing.
+#
+# Ranks are integers rather than an enum because the same ladder is what the Seat column
+# sorts on -- annotated in SQL by seat_rank_case(), so a sorted changelist is still one
+# query.
+#
+# Colour never carries the meaning alone: every dot is followed by its label. That is an
+# accessibility rule rather than decoration, and the mid-tone hues below are picked to
+# stay legible on both the light and the dark admin theme.
+SEAT_RANK_VERIFIED = 4
+SEAT_RANK_SELF_CONFIRMED = 3
+SEAT_RANK_AWAITING = 2
+SEAT_RANK_LAPSED = 1
+SEAT_RANK_NONE = 0
+
+SEAT_LIGHTS = {
+    SEAT_RANK_VERIFIED: ('#2c9c3f', 'Verified'),
+    SEAT_RANK_SELF_CONFIRMED: ('#2c9c3f', 'Seat held'),
+    SEAT_RANK_AWAITING: ('#c98a00', 'Awaiting payment'),
+    SEAT_RANK_LAPSED: ('#d6332b', 'Lapsed'),
+    SEAT_RANK_NONE: ('#d6332b', 'No seat'),
+}
+
+
+def seat_rank(booking, cutoff):
+    """How firmly this booking holds a seat, as one of the SEAT_RANK_* values.
+
+    The Python twin of seat_rank_case(). Both read the same rule as seats_taken():
+    CONFIRMED_STATUSES hold a seat outright, a pending booking holds one only while it is
+    fresher than the TTL cutoff, and cancelled, expired and lapsed pending hold nothing.
+    Lapsed is red rather than orange on purpose -- that seat is back on sale, and a
+    colour implying otherwise would be the expensive direction to get wrong.
+    """
+    if booking.status == Booking.Status.VERIFIED:
+        return SEAT_RANK_VERIFIED
+    if booking.status in Booking.CONFIRMED_STATUSES:
+        return SEAT_RANK_SELF_CONFIRMED
+    if booking.status == Booking.Status.PENDING:
+        return SEAT_RANK_AWAITING if booking.created_at > cutoff else SEAT_RANK_LAPSED
+    return SEAT_RANK_NONE
+
+
+def seat_rank_case(prefix=''):
+    """seat_rank() as a SQL CASE, so a changelist ranks every row in its own query.
+
+    `prefix` walks a relation: the Guest and SongRequest lists pass 'booking__'. The
+    cutoff is resolved once per request by the caller, never once per row.
+    """
+    cutoff = EventSettings.load().pending_cutoff()
+    status = f'{prefix}status'
+    return Case(
+        When(**{status: Booking.Status.VERIFIED}, then=Value(SEAT_RANK_VERIFIED)),
+        When(
+            **{f'{status}__in': Booking.CONFIRMED_STATUSES},
+            then=Value(SEAT_RANK_SELF_CONFIRMED),
+        ),
+        # Orange is exactly what seats_taken() charges for beyond the confirmed rows, so
+        # it reuses that predicate rather than restating "pending and inside the TTL".
+        When(fresh_pending_filter(cutoff, prefix), then=Value(SEAT_RANK_AWAITING)),
+        When(**{status: Booking.Status.PENDING}, then=Value(SEAT_RANK_LAPSED)),
+        default=Value(SEAT_RANK_NONE),
+        output_field=IntegerField(),
+    )
+
+
+def render_seat_light(rank):
+    """A coloured dot and its label.
+
+    Styled inline deliberately: an admin stylesheet would be one more asset that has to
+    survive collectstatic and the hashed manifest storage to avoid rendering a list with
+    no lights at all.
+    """
+    colour, label = SEAT_LIGHTS[rank]
+    return format_html(
+        '<span style="color: {}; font-size: 1.25em; line-height: 1" '
+        'aria-hidden="true">●</span> {}',
+        colour,
+        label,
+    )
+
+
+class SeatLightMixin:
+    """The Seat column for the admins that hang off a booking (Guest, SongRequest).
+
+    Shared rather than copied, so a fourth list cannot invent a fifth reading of the same
+    five statuses.
+    """
+
+    seat_light_prefix = 'booking__'
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            _seat_rank=seat_rank_case(self.seat_light_prefix),
+        )
+
+    @admin.display(description='Seat', ordering='_seat_rank')
+    def seat_light(self, obj):
+        return render_seat_light(obj._seat_rank)
 
 
 class PriceTierInline(admin.TabularInline):
@@ -168,6 +276,8 @@ class BookingAdmin(admin.ModelAdmin):
         'reference', 'buyer_name', 'party_size', 'status', 'holds_seat',
         'amount_display', 'priced_at', 'sender_account_name', 'confirmed_at',
         'refund_state_display',
+        'reference', 'buyer_name', 'party_size', 'status', 'seat_light',
+        'amount_display', 'sender_account_name', 'confirmed_at', 'refund_state_display',
     )
     list_filter = ('status', RefundFilter, StaleConfirmedFilter)
     search_fields = (
@@ -259,24 +369,15 @@ class BookingAdmin(admin.ModelAdmin):
         return exports.organiser_csv_response()
 
     def get_queryset(self, request):
-        """Annotate the seat-holding predicate and guest count in SQL.
+        """Annotate the seat rank and guest count in SQL.
 
-        Computing either per row would call EventSettings.load() once per booking. The
-        cutoff is read once here and the same expiry predicate as seats_taken() is
-        expressed as a CASE, so the whole changelist costs one query.
+        Computing either per row would call EventSettings.load() once per booking.
+        seat_rank_case() reads the cutoff once and expresses the same expiry predicate as
+        seats_taken() as a CASE, so the whole changelist costs one query.
         """
-        cutoff = EventSettings.load().pending_cutoff()
         return super().get_queryset(request).annotate(
             _guest_count=Count('guests', distinct=True),
-            _holds_seat=Case(
-                When(status__in=Booking.CONFIRMED_STATUSES, then=Value(True)),
-                When(
-                    Q(status=Booking.Status.PENDING) & Q(created_at__gt=cutoff),
-                    then=Value(True),
-                ),
-                default=Value(False),
-                output_field=BooleanField(),
-            ),
+            _seat_rank=seat_rank_case(),
         )
 
     @admin.display(description='Party', ordering='_guest_count')
@@ -286,9 +387,11 @@ class BookingAdmin(admin.ModelAdmin):
             return f'{obj._guest_count} (paid for {obj.quantity})'
         return str(obj._guest_count)
 
-    @admin.display(description='Seat', boolean=True, ordering='_holds_seat')
-    def holds_seat(self, obj):
-        return obj._holds_seat
+    @admin.display(description='Seat', ordering='_seat_rank')
+    def seat_light(self, obj):
+        # Not a repeat of the status column. Status is the enum the state machine writes;
+        # this is what it means for the room -- which of the five is costing a seat.
+        return render_seat_light(obj._seat_rank)
 
     @admin.display(description='Amount', ordering='total_amount')
     def amount_display(self, obj):
@@ -365,11 +468,11 @@ class BookingAdmin(admin.ModelAdmin):
 
 
 @admin.register(Guest)
-class GuestAdmin(admin.ModelAdmin):
+class GuestAdmin(SeatLightMixin, admin.ModelAdmin):
     """Mostly edited inline on the booking. Registered separately so the venue list can
     be searched and sorted directly when checking a name."""
 
-    list_display = ('full_name', 'booking_reference', 'booking_status')
+    list_display = ('full_name', 'booking_reference', 'booking_status', 'seat_light')
     list_filter = ('booking__status',)
     search_fields = ('full_name', 'booking__reference', 'booking__buyer_name')
     list_select_related = ('booking',)
@@ -384,11 +487,13 @@ class GuestAdmin(admin.ModelAdmin):
 
 
 @admin.register(SongRequest)
-class SongRequestAdmin(admin.ModelAdmin):
+class SongRequestAdmin(SeatLightMixin, admin.ModelAdmin):
     """Edited inline on the booking; registered on its own so the whole list can be
     scanned and searched without opening bookings one by one."""
 
-    list_display = ('text', 'position', 'booking_reference', 'buyer', 'booking_status')
+    list_display = (
+        'text', 'position', 'booking_reference', 'buyer', 'booking_status', 'seat_light',
+    )
     list_filter = ('booking__status',)
     search_fields = ('text', 'booking__reference', 'booking__buyer_name')
     list_select_related = ('booking',)

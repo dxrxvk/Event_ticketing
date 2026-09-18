@@ -93,7 +93,10 @@ export function ladderFrom(availability) {
   return availability.tiers.map((tier) => ({
     fromSeat: tier.from_seat,
     toSeat: tier.to_seat,
-    price: tier.price_cents / 100,
+    // Cents to whole pesos, rounded rather than left fractional. The server is the
+    // authority on money and works in integer cents; this side only ever displays an
+    // estimate, and 5.000,50 would render as "5.001" while summing as 5000.5.
+    price: Math.round(tier.price_cents / 100),
   }))
 }
 

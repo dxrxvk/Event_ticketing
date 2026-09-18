@@ -55,6 +55,31 @@ def song_requests_payload(song_requests):
     return {'songs': [{'text': song.text} for song in song_requests]}
 
 
+def revolut_amount_for(booking, event_settings):
+    """What this booking owes on the Revolut rail, in minor units.
+
+    Three cases, in order, and the order is the whole point:
+
+    1. A figure was frozen when the booking was priced -- use it, exactly as the peso
+       `total_amount` is used. This is the normal path.
+    2. No frozen figure, but the booking has a peso breakdown. This is a booking made
+       while Revolut was switched off and priced after the organiser turned it on.
+       Rebuild it from the bands the booking was actually quoted in, so a top-tier
+       booking is not charged the first-tier figure -- the naive `price * quantity`
+       would quote a 9.000-band pair EUR 10 instead of EUR 18.
+    3. No breakdown at all: a row from before tiers existed, when one flat price was
+       the truth. The flat product is then the right answer.
+    """
+    if booking.revolut_amount_cents is not None:
+        return booking.revolut_amount_cents
+    if booking.price_breakdown:
+        return sum(
+            event_settings.revolut_price_for(line['unit_price_cents']) * line['quantity']
+            for line in booking.price_breakdown
+        )
+    return event_settings.revolut_price_cents * booking.quantity
+
+
 def revolut_payload(booking, event_settings):
     """The second destination, or None until tag, currency and price are all set.
 
@@ -67,14 +92,7 @@ def revolut_payload(booking, event_settings):
         and event_settings.revolut_price_cents
     ):
         return None
-    # The figure quoted when the booking was priced, so a Revolut payer is held to the
-    # tier they bought in exactly like a peso payer. Falls back to the flat product for
-    # rows created before the quote was stored.
-    amount = (
-        booking.revolut_amount_cents
-        if booking.revolut_amount_cents is not None
-        else event_settings.revolut_price_cents * booking.quantity
-    )
+    amount = revolut_amount_for(booking, event_settings)
     return {
         'tag': event_settings.revolut_tag,
         'link': f'https://revolut.me/{event_settings.revolut_tag}',

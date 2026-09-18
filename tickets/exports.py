@@ -85,12 +85,16 @@ def organiser_rows():
             booking.sender_account_name,
             booking.get_status_display(),
             format_ars(booking.total_amount),
-            # Which tier this booking bought in. Reconciliation is matching deposits to
-            # people by hand, and with a ladder two rows owing different amounts is
-            # normal rather than a discrepancy -- without this column it looks like one.
-            booking.pricing_display,
             timezone.localtime(booking.created_at).strftime('%Y-%m-%d %H:%M'),
             booking.reference,
+            # Appended, not slotted in beside Amount where it reads better: the
+            # organiser may already have a sheet or a script keyed on these positions,
+            # and silently shifting Created and Reference right would break it.
+            #
+            # Which tier this booking bought in. With a ladder, two rows owing
+            # different amounts is normal rather than a discrepancy, and without this
+            # column reconciliation cannot tell the difference.
+            booking.pricing_display,
         ])
     rows.sort(key=lambda row: sort_key(row[0]))
     return rows
@@ -98,7 +102,7 @@ def organiser_rows():
 
 ORGANISER_HEADER = [
     'Full Name', 'Booked by', 'WhatsApp', 'Transfer from', 'Status', 'Amount',
-    'Priced at', 'Created', 'Reference',
+    'Created', 'Reference', 'Priced at',
 ]
 
 

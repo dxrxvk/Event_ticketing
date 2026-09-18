@@ -22,7 +22,7 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 120 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  and 123 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules (including the price ladder and its own race class);
   `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention. 11 tests skip on SQLite by design — see
@@ -58,22 +58,15 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 - **CORS is already set** on Render: `CORS_ALLOWED_ORIGINS` =
   `https://event-ticketing.dhruxk.workers.dev`. A preflight from that origin comes back
   with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
-- **Still to do (pricing), and read this before deploying.** Migration `0004` seeds the
-  two `PriceTier` rows (50 → 7.000, 100 → 9.000) but deliberately does **not** touch
-  `capacity`: putting 70 more seats on sale is an admin decision, not something a deploy
-  does on its own. **The seeded rows are not inert at the current capacity of 60.** The
-  ladder drops only thresholds at or past capacity, so the moment this deploys the live
-  event reads:
-
-  | capacity | ladder |
-  | --- | --- |
-  | 60 (now) | 1-50 at 5.000, 51-60 at 7.000 |
-  | 130 (intended) | 1-50 at 5.000, 51-100 at 7.000, 101-130 at 9.000 |
-
-  So seats 51-60 re-price to 7.000 on deploy. That is the right direction but not the
-  intended shape. **Set capacity to 130 in the admin right after deploying** and check
-  the ladder readout on that page. If Revolut is in use, check its base price is the
-  *first-band* figure; higher bands scale from it.
+- **Still to do (pricing).** Migration `0004` seeds the two `PriceTier` rows (50 →
+  7.000, 100 → 9.000) **and raises `capacity` to 130**, because the ladder only
+  describes a 130-seat event. It raises capacity, never lowers it. Seeding the tiers
+  without the capacity was tried and rejected: `price_ladder()` drops only a threshold
+  at or *past* capacity, so at the old capacity of 60 the event would have sold seats
+  51-60 at 7.000 with no third band and no extra seats — a half-applied ladder nobody
+  asked for. After deploying, check the ladder readout on the event settings page reads
+  `1-50 · 51-100 · 101-130`. If Revolut is in use, its price is the *first-band* figure
+  and higher bands scale from it, so check that too.
 - **Still to do:** `EventSettings` is filled (capacity 60, alias, holder, WhatsApp);
   Revolut is optional and off until its three fields are set. Confirm the start time
   (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local).

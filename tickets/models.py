@@ -41,6 +41,9 @@ class EventSettings(models.Model):
     )
     ticket_price_cents = models.PositiveIntegerField(
         default=500_000,
+        # Zero would make every Revolut band scale to the same figure (see
+        # revolut_price_for) and is never a real price, so the admin form refuses it.
+        validators=[MinValueValidator(1)],
         help_text='Integer cents. 500000 = 5.000 pesos. The price of the FIRST tier -- '
                   'what a ticket costs until the first PriceTier threshold is passed. '
                   'With no tiers configured this is a flat price for everyone.',
@@ -180,7 +183,7 @@ class EventSettings(models.Model):
                 'from_seat': start,
                 'to_seat': tier.starts_after_seats,
                 'price_cents': price,
-                'revolut_price_cents': self._revolut_price_for(price),
+                'revolut_price_cents': self.revolut_price_for(price),
             })
             price = tier.price_cents
             start = tier.starts_after_seats + 1
@@ -188,11 +191,11 @@ class EventSettings(models.Model):
             'from_seat': start,
             'to_seat': max(self.capacity, start),
             'price_cents': price,
-            'revolut_price_cents': self._revolut_price_for(price),
+            'revolut_price_cents': self.revolut_price_for(price),
         })
         return bands
 
-    def _revolut_price_for(self, ars_price_cents):
+    def revolut_price_for(self, ars_price_cents):
         """The Revolut figure for a band priced at `ars_price_cents`.
 
         Scaled from the base pair so the two rails stay in step without asking the
@@ -204,7 +207,11 @@ class EventSettings(models.Model):
         """
         if not self.revolut_price_cents or not self.ticket_price_cents:
             return self.revolut_price_cents
-        return round(self.revolut_price_cents * ars_price_cents / self.ticket_price_cents)
+        # Integer arithmetic with explicit half-up rounding. Not `round(a * b / c)`:
+        # that is float division in a money path, which this project forbids, and
+        # Python's round() is banker's rounding, so an exact .5 would go to even.
+        numerator = self.revolut_price_cents * ars_price_cents
+        return (numerator + self.ticket_price_cents // 2) // self.ticket_price_cents
 
     def price_seats(self, position, quantity):
         """Price `quantity` consecutive seats starting at 0-based seat `position`.

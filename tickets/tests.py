@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from . import exports, services
+from .serializers import pay_screen_payload
 from .models import (
     Booking, EventSettings, Guest, PriceTier, SongRequest, seats_taken,
 )
@@ -569,14 +570,19 @@ class PriceLadderTests(TestCase):
     def test_a_threshold_past_capacity_is_not_a_band(self):
         """A tier nobody can reach must not appear on the page as if they could.
 
-        This is the live configuration before capacity is raised: the 50 and 100 rows
-        exist while capacity is still 60, and a "101-60" band would be nonsense.
+        Capacity 6 against thresholds at 4 and 8 is the shape that matters: the first
+        threshold is reachable and the second is not, so the ladder must keep one step
+        and drop the other. An earlier version of this test used capacity 4, which put
+        *both* thresholds past the end and so proved only the easy half -- and hid the
+        fact that seeding tiers below the current capacity re-prices seats immediately.
         """
-        configure_event(capacity=4)
+        configure_event(capacity=6)
         default_tiers()
         event = EventSettings.load()
         self.assertEqual(
-            [(b['from_seat'], b['to_seat']) for b in event.price_ladder()], [(1, 4)],
+            [(b['from_seat'], b['to_seat'], b['price_cents'])
+             for b in event.price_ladder()],
+            [(1, 4, PRICE), (5, 6, TIER_TWO_PRICE)],
         )
 
     def test_the_position_that_prices_a_booking_is_the_one_capacity_counts(self):
@@ -729,6 +735,56 @@ class TierPricingTests(TestCase):
 
     def test_revolut_stays_hidden_when_it_is_not_priced(self):
         self.assertIsNone(self.post().json()['revolut'])
+
+    def test_revolut_switched_on_later_charges_the_band_the_booking_bought_in(self):
+        """The regression for a real undercharge.
+
+        A booking priced while Revolut was off stores no Revolut figure. Turning
+        Revolut on later must not fall back to base-price x quantity: that would quote
+        a top-band pair the first-band figure and hand two people a cheap ticket.
+        """
+        make_booking(quantity=TIER_THREE_AT, status=Booking.Status.SELF_CONFIRMED)
+        created = self.post(count=2).json()  # priced in the 9.000 band, Revolut off
+        self.assertIsNone(created['revolut'])
+        booking = Booking.objects.get(reference=created['reference'])
+        self.assertIsNone(booking.revolut_amount_cents)
+
+        configure_event(revolut_tag='dhruvk', revolut_currency='EUR',
+                        revolut_price_cents=500)
+        default_tiers()
+        payload = pay_screen_payload(booking, EventSettings.load())
+        # 9.000/5.000 of EUR 5.00, twice -- not 2 x EUR 5.00.
+        self.assertEqual(payload['revolut']['amount_cents'], 1800)
+
+    def test_revolut_scaling_rounds_half_up_in_integer_arithmetic(self):
+        """Money is integer cents. round() is banker's rounding and would give 2."""
+        event = configure_event(revolut_tag='dhruvk', revolut_currency='EUR',
+                                revolut_price_cents=5, ticket_price_cents=200_000)
+        self.assertEqual(event.revolut_price_for(100_000), 3)
+
+    def test_the_ladder_recycles_a_band_when_bookings_stop_holding_seats(self):
+        """A deliberate property, pinned so it cannot change by accident.
+
+        Position is current occupancy, not cumulative sales ever made, so a band that
+        empties is offered again. The alternative -- a counter that only ever rises --
+        would let 50 people who filled the form and never paid burn the whole 5.000
+        band, and the event would "sell out" its cheap seats without selling them.
+
+        The cost, accepted: the advertised price can go down as well as up, and a
+        buyer quoted the dearer band can end up paying more than someone who booked
+        after them. Capacity behaves the same way, and for the same reason.
+        """
+        # The cheap band fills with people who then abandon.
+        stale = make_booking(quantity=TIER_TWO_AT)
+        self.assertEqual(self.post(whatsapp='+5491100000077').json()['total_amount'],
+                         TIER_TWO_PRICE)
+
+        Booking.objects.filter(pk=stale.pk).update(
+            created_at=timezone.now() - timedelta(minutes=46)
+        )
+        # They no longer hold seats, so the band is genuinely free again.
+        self.assertEqual(self.post(whatsapp='+5491100000088').json()['total_amount'],
+                         PRICE)
 
 
 class AvailabilityLadderTests(TestCase):

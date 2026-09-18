@@ -11,27 +11,47 @@ from django.db import migrations, models
 SEED_TIERS = ((50, 700_000), (100, 900_000))
 
 
-def seed_price_tiers(apps, schema_editor):
-    """Seed the two thresholds.
+# The ladder only describes a 130-seat event, so capacity moves with it. An earlier
+# draft left capacity alone on the theory that opening 70 more seats should be a
+# deliberate admin action -- but price_ladder() only drops a threshold at or PAST
+# capacity, so at the old capacity of 60 the 50 threshold is live and the event would
+# sell seats 51-60 at 7.000 with no third band and no extra seats. That half-applied
+# state is worse than either end state, and nobody asked for it.
+SEED_CAPACITY = 130
 
-    Capacity is deliberately NOT set here. Raising it is what opens 70 more seats for
-    sale, and that is the organiser's call from the admin, not something a deploy should
-    do on its own. Until capacity goes up these rows are inert -- price_ladder() drops
-    any threshold at or past capacity.
+
+def seed_price_tiers(apps, schema_editor):
+    """Seed the two thresholds, and the capacity the ladder was designed for.
+
+    Only raises capacity, never lowers it: if the organiser has already set something
+    larger by hand, this must not quietly take seats away from people holding them.
     """
+    EventSettings = apps.get_model('tickets', 'EventSettings')
     PriceTier = apps.get_model('tickets', 'PriceTier')
+
     for starts_after_seats, price_cents in SEED_TIERS:
         PriceTier.objects.get_or_create(
             starts_after_seats=starts_after_seats,
             defaults={'event_id': 1, 'price_cents': price_cents},
         )
 
+    EventSettings.objects.filter(pk=1, capacity__lt=SEED_CAPACITY).update(
+        capacity=SEED_CAPACITY
+    )
+
 
 def drop_price_tiers(apps, schema_editor):
-    PriceTier = apps.get_model('tickets', 'PriceTier')
-    PriceTier.objects.filter(
-        starts_after_seats__in=[seats for seats, _ in SEED_TIERS]
-    ).delete()
+    """Deliberately a no-op.
+
+    Reversing this migration drops the PriceTier table and the Booking columns anyway,
+    so deleting rows first buys nothing -- and a targeted delete would remove an
+    organiser's own tier at threshold 50 that this migration never created.
+
+    Reversing is destructive regardless: every frozen price_breakdown and
+    revolut_amount_cents goes with the columns, and those are the record of what each
+    buyer was actually quoted. Capacity is left where it is, for the same reason the
+    forward step never lowers it.
+    """
 
 
 class Migration(migrations.Migration):

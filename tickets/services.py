@@ -88,19 +88,18 @@ def create_booking(*, buyer_name, buyer_whatsapp, guests, buyer_email='',
         if existing is not None:
             return existing, False
 
-        taken = seats_taken(event_settings)
+        # One count, used for both decisions, so the seat a buyer is charged for is
+        # literally the seat capacity admitted them to. Calling next_seat_position()
+        # rather than seats_taken() directly is the point: it is the single definition
+        # of "which seat is next", and a change there has to reach this path or the
+        # ladder and the guest list start describing different events.
+        taken = event_settings.next_seat_position()
         if taken + quantity > event_settings.capacity:
             raise SoldOut(max(event_settings.capacity - taken, 0))
 
-        # Price the seats inside the same lock that just counted them, so the tier a
-        # buyer is quoted is the tier their seats actually are. Priced here and never
-        # again: the quote is frozen on the row because the buyer is about to read it
-        # off the pay screen and type it into a bank. Re-deriving it at confirm would
-        # let the ladder move under someone who already sent the money.
-        #
-        # `taken` is reused rather than recomputed -- it is the same number
-        # next_seat_position() would return, and asking twice inside one lock invites
-        # the two answers to drift the day one of them grows a condition.
+        # Priced inside the same lock that just counted, then frozen on the row and
+        # never re-derived: the buyer is about to read this figure off the pay screen
+        # and type it into a bank, so the ladder must not move under them at confirm.
         breakdown, total, revolut_total = event_settings.price_seats(taken, quantity)
 
         booking = Booking.objects.create(

@@ -55,6 +55,31 @@ def song_requests_payload(song_requests):
     return {'songs': [{'text': song.text} for song in song_requests]}
 
 
+def revolut_amount_for(booking, event_settings):
+    """What this booking owes on the Revolut rail, in minor units.
+
+    Three cases, in order, and the order is the whole point:
+
+    1. A figure was frozen when the booking was priced -- use it, exactly as the peso
+       `total_amount` is used. This is the normal path.
+    2. No frozen figure, but the booking has a peso breakdown. This is a booking made
+       while Revolut was switched off and priced after the organiser turned it on.
+       Rebuild it from the bands the booking was actually quoted in, so a top-tier
+       booking is not charged the first-tier figure -- the naive `price * quantity`
+       would quote a 9.000-band pair EUR 10 instead of EUR 18.
+    3. No breakdown at all: a row from before tiers existed, when one flat price was
+       the truth. The flat product is then the right answer.
+    """
+    if booking.revolut_amount_cents is not None:
+        return booking.revolut_amount_cents
+    if booking.price_breakdown:
+        return sum(
+            event_settings.revolut_price_for(line['unit_price_cents']) * line['quantity']
+            for line in booking.price_breakdown
+        )
+    return event_settings.revolut_price_cents * booking.quantity
+
+
 def revolut_payload(booking, event_settings):
     """The second destination, or None until tag, currency and price are all set.
 
@@ -67,7 +92,7 @@ def revolut_payload(booking, event_settings):
         and event_settings.revolut_price_cents
     ):
         return None
-    amount = event_settings.revolut_price_cents * booking.quantity
+    amount = revolut_amount_for(booking, event_settings)
     return {
         'tag': event_settings.revolut_tag,
         'link': f'https://revolut.me/{event_settings.revolut_tag}',
@@ -93,6 +118,20 @@ def pay_screen_payload(booking, event_settings):
         # Argentine format, deliberately: this number is read off the screen and typed
         # into an Argentine banking app.
         'amount_display': format_ars(booking.total_amount),
+        # The quote, line by line. A party that straddles a tier boundary owes two
+        # different unit prices, and "24.000" with no explanation reads like a mistake
+        # to someone who was told tickets cost 5.000.
+        'price_breakdown': [
+            {
+                'from_seat': line['from_seat'],
+                'to_seat': line['to_seat'],
+                'quantity': line['quantity'],
+                'unit_price_cents': line['unit_price_cents'],
+                'unit_price_display': format_ars(line['unit_price_cents']),
+            }
+            for line in (booking.price_breakdown or [])
+        ],
+        'pricing_display': booking.pricing_display,
         'alias': event_settings.alias,
         'cvu': event_settings.cvu,
         'account_holder_name': event_settings.account_holder_name,

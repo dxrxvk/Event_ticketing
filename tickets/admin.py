@@ -9,6 +9,8 @@ from django.utils.html import format_html
 
 from . import exports
 from .models import (
+    MAX_SONG_REQUESTS, Booking, EventSettings, Guest, PriceTier, SongRequest,
+    seats_remaining, seats_taken,
     MAX_SONG_REQUESTS, Booking, EventSettings, Guest, SongRequest,
     fresh_pending_filter, seats_remaining, seats_taken,
 )
@@ -124,19 +126,36 @@ class SeatLightMixin:
         return render_seat_light(obj._seat_rank)
 
 
+class PriceTierInline(admin.TabularInline):
+    """The steps in the ladder. The first band is the base price on this same page, so
+    two rows describe a three-tier event."""
+
+    model = PriceTier
+    extra = 0
+    fields = ('starts_after_seats', 'price_cents')
+
+
 @admin.register(EventSettings)
 class EventSettingsAdmin(admin.ModelAdmin):
     """The singleton. Add and delete are blocked: the row is created by a data migration
     and save() pins pk=1, so a second one would silently do nothing."""
 
-    readonly_fields = ('capacity_readout',)
+    readonly_fields = ('capacity_readout', 'price_ladder_readout')
+    inlines = [PriceTierInline]
     fieldsets = (
         ('Event', {
             'fields': ('event_name', 'event_date', 'venue', 'capacity',
                        'capacity_readout'),
         }),
+        ('Price ladder', {
+            'fields': ('ticket_price_cents', 'price_ladder_readout'),
+            'description': 'The price below is what the FIRST tier costs. Each row in '
+                           '"Price tiers" at the bottom of this page raises it from a '
+                           'given seat on. Changing the ladder never re-prices a booking '
+                           'that already exists -- its quote was frozen when it was made.',
+        }),
         ('Payment destination', {
-            'fields': ('ticket_price_cents', 'alias', 'cvu', 'account_holder_name'),
+            'fields': ('alias', 'cvu', 'account_holder_name'),
             'description': 'Shown to buyers on the pay screen. The API response is '
                            'authoritative -- a stale value baked into the frontend is '
                            'overwritten from here.',
@@ -166,6 +185,30 @@ class EventSettingsAdmin(admin.ModelAdmin):
         if not obj.pk:
             return '-'
         return f'{seats_taken(obj)} taken, {seats_remaining(obj)} remaining'
+
+    @admin.display(description='Ladder')
+    def price_ladder_readout(self, obj):
+        """The thresholds rendered as the ranges a human said out loud.
+
+        Tiers are stored as "after N seats", which is the form with nothing to drift,
+        but nobody plans an event that way -- they say "the first 50 are 5.000". This
+        turns the stored form back into the spoken one, and names the seat being sold
+        next, so a mis-entered threshold is visible before anyone buys at the wrong
+        price rather than after.
+        """
+        if not obj.pk:
+            return '-'
+        bands = ' · '.join(
+            f"{band['from_seat']}-{band['to_seat']}: {format_ars(band['price_cents'])}"
+            for band in obj.price_ladder()
+        )
+        position = obj.next_seat_position()
+        if position >= obj.capacity:
+            return f'{bands} — sold out'
+        return (
+            f'{bands} — next ticket is seat {position + 1} at '
+            f'{format_ars(obj.current_price_cents())}'
+        )
 
 
 class GuestInline(admin.TabularInline):
@@ -230,6 +273,9 @@ class BookingAdmin(admin.ModelAdmin):
     """
 
     list_display = (
+        'reference', 'buyer_name', 'party_size', 'status', 'holds_seat',
+        'amount_display', 'priced_at', 'sender_account_name', 'confirmed_at',
+        'refund_state_display',
         'reference', 'buyer_name', 'party_size', 'status', 'seat_light',
         'amount_display', 'sender_account_name', 'confirmed_at', 'refund_state_display',
     )
@@ -240,7 +286,10 @@ class BookingAdmin(admin.ModelAdmin):
     )
     ordering = ('-confirmed_at', '-created_at')
     inlines = [GuestInline, SongRequestInline]
-    readonly_fields = ('reference', 'created_at')
+    # price_breakdown is evidence of what the buyer was quoted, not a field to edit:
+    # an editable JSON blob invites a typo that disagrees with total_amount, and the
+    # two are what a refund is computed from.
+    readonly_fields = ('reference', 'created_at', 'price_breakdown')
     actions = ('mark_verified', 'mark_refund_owed', 'mark_refunded', 'expire_stale_pending')
 
     fieldsets = (
@@ -249,8 +298,12 @@ class BookingAdmin(admin.ModelAdmin):
                        'sender_account_name'),
         }),
         ('Booking', {
-            'fields': ('quantity', 'total_amount', 'status', 'created_at',
+            'fields': ('quantity', 'total_amount', 'price_breakdown',
+                       'revolut_amount_cents', 'status', 'created_at',
                        'confirmed_at', 'verified_at'),
+            'description': 'The quote was frozen when the booking was made. Editing the '
+                           'ladder later does not change it, which is the point: the '
+                           'buyer already read this number off the pay screen.',
         }),
         ('Money received', {
             'fields': ('amount_received_cents', 'verified_source'),
@@ -343,6 +396,16 @@ class BookingAdmin(admin.ModelAdmin):
     @admin.display(description='Amount', ordering='total_amount')
     def amount_display(self, obj):
         return format_ars(obj.total_amount)
+
+    @admin.display(description='Priced at')
+    def priced_at(self, obj):
+        """Which tier(s) this booking bought in.
+
+        The column that answers "are we actually selling at the ladder we published?"
+        A run of 5.000 rows appearing after seat 50 means late confirms are still
+        landing on old quotes, which is allowed but worth seeing.
+        """
+        return obj.pricing_display
 
     @admin.display(description='Refund')
     def refund_state_display(self, obj):

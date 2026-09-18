@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help install migrate makemigrations superuser shell run test test-robustness \
+.PHONY: race help install migrate makemigrations superuser shell run test test-robustness \
         loadtest check-deploy frontend-install frontend-dev frontend-build frontend-preview
 
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  make shell           Django shell"
 	@echo "  make test            run tickets test suite"
 	@echo "  make test-robustness bursts, hostile input, contention (Postgres for the races)"
+	@echo "  make race            capacity + tier race tests, 10x (Postgres only)"
 	@echo "  make loadtest        concurrent reads+writes against a local gunicorn --threads 4"
 	@echo "  make check-deploy    manage.py check --deploy"
 	@echo ""
@@ -45,6 +46,30 @@ test:
 
 test-robustness:
 	uv run python manage.py test tickets.test_robustness
+
+# The contention evidence: ten consecutive runs of both threaded races -- capacity
+# (nobody oversells) and tiers (nobody buys a cheap seat twice). One green run proves
+# little, because losing a race is probabilistic.
+#
+# A SKIP is treated as a FAILURE. select_for_update() is a silent no-op on SQLite, so
+# these tests skip there and a skipped run would otherwise read as success while
+# proving nothing. Only meaningful with DATABASE_URL on Neon's DIRECT host.
+RACE_TESTS = tickets.tests.CapacityRaceTest tickets.tests.TierRaceTest
+
+race:
+	@for i in $$(seq 1 10); do \
+	  echo "=== race run $$i/10"; \
+	  out=$$(uv run python manage.py test $(RACE_TESTS) -v 2 2>&1) \
+	    || { echo "$$out"; echo "RUN $$i FAILED"; exit 1; }; \
+	  echo "$$out" | grep -E '^Ran |^OK|^FAILED'; \
+	  if echo "$$out" | grep -q 'skipped'; then \
+	    echo "SKIPPED, so nothing was proven. DATABASE_URL must be Neon's DIRECT host"; \
+	    echo "(no -pooler in the hostname), not SQLite."; \
+	    exit 1; \
+	  fi; \
+	done; \
+	echo ""; \
+	echo "10/10 green: capacity never exceeded, and every tier sold exactly its seats."
 
 # Mirrors render.yaml's startCommand so the worker model under test is the deployed one.
 # Uses whatever DATABASE_URL .env points at -- run this against a scratch *Postgres*

@@ -87,6 +87,14 @@ def organiser_rows():
             format_ars(booking.total_amount),
             timezone.localtime(booking.created_at).strftime('%Y-%m-%d %H:%M'),
             booking.reference,
+            # Appended, not slotted in beside Amount where it reads better: the
+            # organiser may already have a sheet or a script keyed on these positions,
+            # and silently shifting Created and Reference right would break it.
+            #
+            # Which tier this booking bought in. With a ladder, two rows owing
+            # different amounts is normal rather than a discrepancy, and without this
+            # column reconciliation cannot tell the difference.
+            booking.pricing_display,
         ])
     rows.sort(key=lambda row: sort_key(row[0]))
     return rows
@@ -94,7 +102,7 @@ def organiser_rows():
 
 ORGANISER_HEADER = [
     'Full Name', 'Booked by', 'WhatsApp', 'Transfer from', 'Status', 'Amount',
-    'Created', 'Reference',
+    'Created', 'Reference', 'Priced at',
 ]
 
 

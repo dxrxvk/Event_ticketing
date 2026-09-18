@@ -10,6 +10,9 @@ const props = defineProps({
 })
 defineEmits(['confirm'])
 
+// More than one line means the party was split across a price step.
+const spansTiers = computed(() => (props.booking.price_breakdown?.length ?? 0) > 1)
+
 const limitHelpLink = computed(() => {
   const number = props.booking.organiser_whatsapp?.replace(/\D/g, '')
   return number ? `https://wa.me/${number}` : null
@@ -29,10 +32,23 @@ const limitHelpLink = computed(() => {
         No copy button here, contra S10.5. Argentine banking apps require the amount to be
         typed into their own field -- there is nothing to paste into. S10.5 justified the
         button as "retyping is where people round it off", which was only ever a problem
-        when each buyer owed a different number of centavos. A flat 5.000 is trivial to
-        type correctly.
+        when each buyer owed a different number of centavos. These are round thousands.
       -->
       <p class="amount__value">{{ booking.amount_display }}</p>
+      <!--
+        Only when the party straddled a price step. Someone told tickets are 5.000 who
+        is asked for 24.000 for four people will assume the site is broken, and the
+        cheapest fix for that is to show the arithmetic.
+      -->
+      <p v-if="spansTiers" class="amount__split">
+        <span v-for="(line, i) in booking.price_breakdown" :key="i">
+          {{ i > 0 ? ' + ' : '' }}{{ line.quantity }} &times;
+          {{ line.unit_price_display }}
+        </span>
+        <span class="amount__split-why">
+          The price rises as spots sell, and your group crossed a step.
+        </span>
+      </p>
       <p class="amount__note">
         Send this as <strong>one single transfer</strong> for the full
         amount<template v-if="booking.revolut">, by either method below</template>.
@@ -118,6 +134,20 @@ const limitHelpLink = computed(() => {
   line-height: 1;
   letter-spacing: var(--tracking-tight);
   color: var(--accent-strong);
+}
+
+.amount__split {
+  margin-top: var(--space-3);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.amount__split-why {
+  display: block;
+  margin-top: var(--space-1, 4px);
+  font-weight: 400;
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
 }
 
 .amount__note {

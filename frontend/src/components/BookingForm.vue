@@ -1,13 +1,16 @@
 <script setup>
 import { computed, reactive } from 'vue'
 
-import { event, formatPesos } from '../event.config.js'
+import { event, formatPesos, ladderFrom, quoteFor } from '../event.config.js'
 import AppButton from './AppButton.vue'
 import GuestFields from './GuestFields.vue'
 
 const props = defineProps({
   submitting: { type: Boolean, default: false },
   fieldErrors: { type: Object, default: () => ({}) },
+  // Carries the live ladder and which seat is next. Null until the API answers, which
+  // is why the figure below is labelled an estimate.
+  availability: { type: Object, default: null },
 })
 const emit = defineEmits(['submit'])
 
@@ -19,7 +22,23 @@ const form = reactive({
   guests: [''],
 })
 
-const total = computed(() => event.pricePerTicket * form.guests.length)
+/**
+ * What this party will owe, split across tier boundaries.
+ *
+ * Only ever an estimate: the price is decided by the server under a lock at the moment
+ * Reserve is tapped, and seats can sell in between. Saying "estimated" is the honest
+ * version of a number that can move, and the pay screen then shows the real one.
+ */
+const quote = computed(() =>
+  quoteFor(
+    form.guests.length,
+    ladderFrom(props.availability),
+    props.availability?.next_seat ?? 1,
+  ),
+)
+
+const total = computed(() => quote.value.total)
+const spansTiers = computed(() => quote.value.lines.length > 1)
 
 const canSubmit = computed(
   () =>
@@ -124,11 +143,21 @@ function onSubmit() {
     </label>
 
     <div class="total">
-      <span class="total__label">Total</span>
+      <span class="total__label">Estimated total</span>
       <span class="total__value">{{ formatPesos(total) }}</span>
       <span class="total__note">
         {{ form.guests.length }} {{ form.guests.length === 1 ? 'person' : 'people' }}
       </span>
+      <!-- A party can straddle a price step, and "24.000" for four people reads as a
+           mistake to someone who was told tickets cost 5.000. -->
+      <p v-if="spansTiers" class="total__split">
+        <span v-for="(line, i) in quote.lines" :key="i">
+          {{ i > 0 ? ' + ' : '' }}{{ line.quantity }} &times; {{ formatPesos(line.price) }}
+        </span>
+      </p>
+      <p class="total__note total__fixed">
+        The price rises as spots sell. Yours is fixed the moment you tap Reserve.
+      </p>
     </div>
 
     <AppButton type="submit" :loading="submitting" :disabled="!canSubmit">
@@ -158,6 +187,7 @@ function onSubmit() {
   padding: var(--space-4) 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
 }
 
 .total__label {
@@ -170,6 +200,17 @@ function onSubmit() {
 
 .total__value { margin-left: auto; font-size: var(--text-xl); font-weight: 700; }
 .total__note { font-size: var(--text-sm); color: var(--ink-muted); }
+
+/* Both sit on their own line under the figure, hence the full-width basis. */
+.total__split,
+.total__fixed {
+  flex-basis: 100%;
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.total__split { font-weight: 600; color: var(--ink); }
 
 .form__deadline { color: var(--accent-strong); }
 

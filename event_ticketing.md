@@ -25,7 +25,9 @@ The venue has no access to this app. They receive a plain list of names by
 Do not build these. If they seem like a good idea, they are not, for this event.
 
 - No payment provider integration, webhooks, or Mercado Pago API.
-- No ticket tiers or early bird pricing. One fixed price.
+- ~~No ticket tiers or early bird pricing. One fixed price.~~ **Overruled 2026-09-18:**
+  the event sells on a published ladder (50 at 5.000, 50 at 7.000, 30 at 9.000).
+  See the price invariant in CLAUDE.md. Per-buyer amount variation is still refused.
 - No QR codes, scannable tickets, or door check-in view. The venue works off a
   name list sent over WhatsApp.
 - No transactional email or SMS. Confirmation is handled manually over WhatsApp.

@@ -23,9 +23,17 @@ export const event = {
   venue: 'Venue Name',
   venueArea: 'Neighbourhood, Buenos Aires',
 
-  // Display only. The amount actually charged comes from the API, which is the single
-  // source of truth for money.
-  pricePerTicket: 5000,
+  // Display only, and only until /api/availability/ answers with the real ladder --
+  // the API is the single source of truth for money, and an admin edit must not need a
+  // redeploy. This copy exists because S10.1 requires a price on screen before any API
+  // call returns, and a page that says nothing about price reads as a scam.
+  //
+  // `upTo` is the last seat at that price. Keep it in step with the PriceTier rows.
+  priceTiers: [
+    { upTo: 50, price: 5000 },
+    { upTo: 100, price: 7000 },
+    { upTo: 130, price: 9000 },
+  ],
 
   // '' means no poster panel renders and the hero stands on its own -- the page is
   // designed to look finished without it.
@@ -64,4 +72,62 @@ export function whatsappLink(message = '') {
  *  Argentine banking app. Mirrors format_ars() in tickets/money.py. */
 export function formatPesos(amount) {
   return new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 }).format(amount)
+}
+
+/**
+ * The baked ladder in the shape the API sends, so one quote function serves both.
+ * Whole pesos here, integer cents there -- converted at this boundary and nowhere else.
+ */
+export function bakedLadder() {
+  let from = 1
+  return event.priceTiers.map((tier) => {
+    const band = { fromSeat: from, toSeat: tier.upTo, price: tier.price }
+    from = tier.upTo + 1
+    return band
+  })
+}
+
+/** The API's ladder, in the same shape. Returns null until availability arrives. */
+export function ladderFrom(availability) {
+  if (!availability?.tiers?.length) return null
+  return availability.tiers.map((tier) => ({
+    fromSeat: tier.from_seat,
+    toSeat: tier.to_seat,
+    // Cents to whole pesos, rounded rather than left fractional. The server is the
+    // authority on money and works in integer cents; this side only ever displays an
+    // estimate, and 5.000,50 would render as "5.001" while summing as 5000.5.
+    price: Math.round(tier.price_cents / 100),
+  }))
+}
+
+/**
+ * Price `quantity` seats starting at 1-based `nextSeat`, splitting across bands.
+ *
+ * Mirrors EventSettings.price_seats() in tickets/models.py -- deliberately, because the
+ * form has to show a total before the server has quoted one. The server's number is the
+ * one that counts; this is why the form calls its figure an estimate.
+ */
+export function quoteFor(quantity, ladder, nextSeat = 1) {
+  const bands = ladder?.length ? ladder : bakedLadder()
+  const lines = []
+  let seat = nextSeat
+  let left = quantity
+
+  for (const band of bands) {
+    if (left <= 0) break
+    if (seat > band.toSeat) continue
+    const take = Math.min(left, band.toSeat - seat + 1)
+    lines.push({ quantity: take, price: band.price })
+    seat += take
+    left -= take
+  }
+  if (left > 0) {
+    // Past the end of the ladder: the last price continues, same as the server.
+    lines.push({ quantity: left, price: bands[bands.length - 1].price })
+  }
+
+  return {
+    lines,
+    total: lines.reduce((sum, line) => sum + line.quantity * line.price, 0),
+  }
 }

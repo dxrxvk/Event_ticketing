@@ -22,6 +22,10 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
+  and 123 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  business rules (including the price ladder and its own race class);
+  `tickets/test_robustness.py` holds bursts, throttling, hostile input,
+  admin edits mid-sale, rollback and contention. 11 tests skip on SQLite by design — see
   and 96 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
@@ -57,6 +61,15 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 - **CORS is already set** on Render: `CORS_ALLOWED_ORIGINS` =
   `https://event-ticketing.dhruxk.workers.dev`. A preflight from that origin comes back
   with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
+- **Still to do (pricing).** Migration `0004` seeds the two `PriceTier` rows (50 →
+  7.000, 100 → 9.000) **and raises `capacity` to 130**, because the ladder only
+  describes a 130-seat event. It raises capacity, never lowers it. Seeding the tiers
+  without the capacity was tried and rejected: `price_ladder()` drops only a threshold
+  at or *past* capacity, so at the old capacity of 60 the event would have sold seats
+  51-60 at 7.000 with no third band and no extra seats — a half-applied ladder nobody
+  asked for. After deploying, check the ladder readout on the event settings page reads
+  `1-50 · 51-100 · 101-130`. If Revolut is in use, its price is the *first-band* figure
+  and higher bands scale from it, so check that too.
 - **Still to do:** `EventSettings` is filled (capacity 60, alias, holder, WhatsApp);
   Revolut is optional and off until its three fields are set. Confirm the start time
   (`event.config.js` says 21:00; the admin's `event_date` reads 12:00 local).
@@ -89,6 +102,8 @@ uv run python manage.py test tickets.test_robustness          # bursts, races, h
 uv run python scripts/loadtest.py --base-url https://tickets-6cko.onrender.com  # read-only load
 
 uv run python manage.py check --deploy                        # pre-deploy audit (step 11)
+
+make race                                                     # both race classes x10
 ```
 
 There is no linter or formatter configured.
@@ -99,13 +114,33 @@ These are the decisions the plan is emphatic about; breaking them silently break
 event.
 
 - **Money is integer cents.** Never float.
-- **The price is flat: 5.000 per ticket, for everyone** paying in pesos, plus optionally
-  one flat Revolut price per ticket in one foreign currency (this overrides §2's single
-  price line the way §3 and §10 are overridden). `total_amount = TICKET_PRICE * quantity`,
-  nothing added. §5's `cents_code` and §6's "Unique cents" scheme are **dropped** — see
-  the plan critique. Never reintroduce per-buyer amount variation, including §6's
-  `5.001,XX` fallback: two flat prices on two rails, never a price that depends on who is
-  paying.
+- **The price is a published ladder, not a flat number and never a per-buyer amount.**
+  Decided 2026-09-18, overriding §2's single price and §1's "no ticket tiers": 5.000 for
+  the first 50 seats, 7.000 for the next 50, 9.000 for the last 30, with capacity 130.
+  The rules that make a ladder safe here:
+  - **The first band is `EventSettings.ticket_price_cents`; each further step is a
+    `PriceTier` row** holding `starts_after_seats` (a threshold, so there is one number
+    per step and nothing to reconcile) and `price_cents`. No tiers configured is exactly
+    the old flat behaviour, and `PriceLadderTests.test_no_tiers_is_the_old_flat_price`
+    guards that.
+  - **Which band a booking gets is decided by `EventSettings.next_seat_position()`,** and
+    that is deliberately the same count capacity is enforced on (`seats_taken()`). The Nth
+    ticket sold must be the Nth ticket charged for. Nothing else computes a position.
+    It is one method precisely so the seat rule can change without hunting: **if a
+    `pending` booking ever stops holding a seat, position must still count live pending
+    rows here**, or a launch burst (everyone submits before anyone confirms) quotes the
+    whole room the cheapest band and the ladder never advances.
+  - **The quote is frozen on the row at create** (`total_amount`, `price_breakdown`,
+    `revolut_amount_cents`), inside the same lock that counted the seats. It is never
+    re-derived at confirm: the buyer already read that figure off the pay screen and
+    typed it into a bank. Editing the ladder later does not re-price anyone.
+  - **A party straddling a boundary is split** — 2 × 5.000 + 2 × 7.000 — and both the form
+    and the pay screen show the split, because "24.000" unexplained reads as a bug to
+    someone who was told tickets cost 5.000.
+  - **Still never per-buyer variation.** Two people buying the 51st and 52nd tickets pay
+    the same. §5's `cents_code` and §6's "Unique cents" scheme stay **dropped**, including
+    §6's `5.001,XX` fallback. A ladder is public and readable off the page; a centavo tag
+    is a different amount for each person, which is what this project refuses.
 - **Who paid is identified by three signals**, not by the amount: `reference` (shown to
   the buyer to paste into the transfer's *concepto* field, if their bank has one),
   `sender_account_name` (asked on the form, because the account holder is often not the
@@ -158,11 +193,15 @@ Backend and frontend are deliberately separate deployments:
   `booking_cancelled`, `booking_not_confirmed` (song requests before payment is
   confirmed). All but `sold_out` also carry `organiser_whatsapp` so the page can offer a
   human. Validation is `400`, unknown reference `404`.
-- **Revolut is a second flat price, not a second price list.** `EventSettings` holds
-  `revolut_tag`, `revolut_currency` and `revolut_price_cents`; the pay payload's `revolut`
-  key is `null` until the tag is set, otherwise tag, `revolut.me` link and
-  `revolut_price_cents * quantity`. The peso `total_amount` is untouched. Reconciliation
-  then means two statements; `verified_source` can say "revolut".
+- **Revolut rides the same ladder, on a second rail.** `EventSettings` holds
+  `revolut_tag`, `revolut_currency` and `revolut_price_cents` (the price for the *first*
+  band); the pay payload's `revolut` key is `null` until tag, currency and price are all
+  set. Higher bands are scaled from the base pair with integer arithmetic, so a Revolut
+  payer in the 9.000 band owes 9/5 of the base Revolut figure — otherwise the cheapest
+  ticket at the door would be a foreign one bought last. The quote is frozen on
+  `Booking.revolut_amount_cents` at create, like the peso one. The peso `total_amount` is
+  separate and untouched. Reconciliation then means two statements; `verified_source` can
+  say "revolut".
 - **Song requests** (`SongRequest`, max three per booking) are stored as typed and only
   accepted for confirmed bookings. The admin shows them inline and exports a deduplicated
   playlist text under the guest-list exports. Any real-playlist sync is a layer on top of
@@ -182,10 +221,16 @@ Backend and frontend are deliberately separate deployments:
     form fade in below only then. `warmUp()` still fires on mount, so the backend wakes
     while people look at the poster. The cover is a local `ref` in `App.vue`, not booking
     state. With no poster there is no cover and no card.
-  - **Event details are baked in** via `src/event.config.js` (name, date, venue, price,
-    `posterUrl`, WhatsApp), because §10.1 requires the page to render before any API call.
-    The **payment destination is not** — alias, CVU and account holder come from the API
-    so a mistyped alias is an admin edit, not a redeploy.
+  - **Event details are baked in** via `src/event.config.js` (name, date, venue,
+    `priceTiers`, `posterUrl`, WhatsApp), because §10.1 requires the page to render before
+    any API call. The baked ladder is a placeholder only: `/api/availability/` sends
+    `tiers`, `next_seat` and `current_price_display`, and every component prefers those.
+    Keep the two in step anyway — the baked one is what a visitor sees for the first
+    second, and it under-quotes once the cheap band is gone. That is why the form says
+    **"Estimated total"** and the server's `amount_display` is authoritative on the pay
+    screen. `quoteFor()` in `event.config.js` mirrors `price_seats()` in `models.py`.
+    The **payment destination is not** baked in — alias, CVU and account holder come from
+    the API so a mistyped alias is an admin edit, not a redeploy.
   - **All colour and type live in `src/styles/tokens.css`.** Restyling to match the event
     poster means editing that one file. Tokens are named semantically (`--accent`,
     `--surface`), never literally, so a swap does not leave lying names.

@@ -83,6 +83,16 @@ class EventSettings(models.Model):
                   'paying via Revolut.',
     )
 
+    seats_high_water = models.PositiveIntegerField(
+        default=0,
+        help_text='How far up the price ladder the event has climbed: the most seats '
+                  'ever occupied at once. The ladder reads this, not current '
+                  'occupancy, so the price never falls when a booking lapses or is '
+                  'cancelled -- those seats come back for sale, but at the price the '
+                  'event has reached. Lower it by hand only to deliberately re-open a '
+                  'cheaper band, e.g. after a bulk cancellation.',
+    )
+
     pending_ttl_minutes = models.PositiveIntegerField(
         default=45,
         help_text='How long a pending booking holds its seats.',
@@ -146,19 +156,49 @@ class EventSettings(models.Model):
 
     # ------------------------------------------------------------------ pricing
 
-    def next_seat_position(self, now=None):
-        """How many seats are already spoken for, i.e. the 0-based index of the seat
-        the next ticket sold will be.
+    def price_position(self, taken):
+        """The 0-based index of the seat the next ticket will be priced as.
 
-        **The one place that decides which tier a new booking is priced in.** It is
-        deliberately the same count capacity is enforced on (`seats_taken()`), so the
-        50th ticket sold is the 50th ticket charged for -- the price ladder and the
-        guest list can never describe different events.
+        **The one place that decides which tier a booking is quoted in.** Everything
+        that needs a position -- `create_booking()`, `/api/availability/`, the admin
+        readout -- comes through here, so the price a buyer is shown and the price they
+        are charged cannot come apart.
 
-        If the seat rule ever changes (a pending booking ceasing to hold a seat, say),
-        change it here and the ladder follows. Nothing else computes a position.
+        The ladder is **monotonic**: it is the high-water mark of occupancy, never
+        current occupancy alone. Seats that come back (a pending booking lapsing, a
+        cancellation) restore *capacity* but not *price*. Without that, the ladder walks
+        backwards -- 50 people fill the form at launch, the next buyer is quoted 7.000,
+        thirty abandon, and a buyer arriving later is quoted 5.000 again. Over a sale
+        with ordinary churn the event would sell far more than 50 tickets at 5.000,
+        which is the whole thing the ladder exists to prevent.
+
+        The accepted cost is the other way round: seats abandoned in the cheap band are
+        not re-offered at the cheap price. That is a deliberate trade, and
+        `seats_high_water` is editable in the admin so a bulk cancellation can be
+        forgiven by hand.
+
+        Takes the occupancy count rather than querying, because every caller has just
+        counted -- and asking twice inside one lock invites two answers.
         """
-        return seats_taken(self, now)
+        return max(taken, self.seats_high_water)
+
+    def next_seat_position(self, now=None):
+        """price_position() for a caller that has not already counted seats."""
+        return self.price_position(seats_taken(self, now))
+
+    def advance_price_position(self, seats_through):
+        """Move the ladder's high-water mark up to `seats_through`. Never down.
+
+        Called under the same lock that priced the booking, so two concurrent creates
+        cannot both claim the same rung. Writes a single column: the caller's copy of
+        this row was read at the top of the transaction and may be stale in fields an
+        admin edited meanwhile.
+        """
+        if seats_through <= self.seats_high_water:
+            return False
+        self.seats_high_water = seats_through
+        self.save(update_fields=['seats_high_water'])
+        return True
 
     def price_ladder(self):
         """The ladder as inclusive 1-based seat ranges, cheapest first.

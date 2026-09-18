@@ -148,11 +148,15 @@ class EventSettingsAdmin(admin.ModelAdmin):
                        'capacity_readout'),
         }),
         ('Price ladder', {
-            'fields': ('ticket_price_cents', 'price_ladder_readout'),
+            'fields': ('ticket_price_cents', 'seats_high_water', 'price_ladder_readout'),
             'description': 'The price below is what the FIRST tier costs. Each row in '
                            '"Price tiers" at the bottom of this page raises it from a '
                            'given seat on. Changing the ladder never re-prices a booking '
-                           'that already exists -- its quote was frozen when it was made.',
+                           'that already exists -- its quote was frozen when it was made. '
+                           'The ladder only ever climbs: if bookings lapse, their seats '
+                           'go back on sale at the price reached, not the price they '
+                           'were first offered at. Lower "seats high water" by hand to '
+                           're-open a cheaper band on purpose.',
         }),
         ('Payment destination', {
             'fields': ('alias', 'cvu', 'account_holder_name'),
@@ -202,13 +206,24 @@ class EventSettingsAdmin(admin.ModelAdmin):
             f"{band['from_seat']}-{band['to_seat']}: {format_ars(band['price_cents'])}"
             for band in obj.price_ladder()
         )
-        position = obj.next_seat_position()
-        if position >= obj.capacity:
+        taken = seats_taken(obj)
+        position = obj.price_position(taken)
+        if taken >= obj.capacity:
             return f'{bands} — sold out'
-        return (
+        line = (
             f'{bands} — next ticket is seat {position + 1} at '
             f'{format_ars(obj.current_price_cents())}'
         )
+        if position > taken:
+            # The gap is abandoned bookings: seats back on sale, price not rolled back.
+            # Worth naming, because otherwise "20 seats free but priced as seat 51"
+            # looks like a bug rather than the rule it is.
+            line += (
+                f' — the room holds {taken}, but the ladder has reached {position}, '
+                f'so {position - taken} freed seat(s) are back on sale at the price '
+                f'the event has climbed to'
+            )
+        return line
 
 
 class GuestInline(admin.TabularInline):
@@ -273,11 +288,9 @@ class BookingAdmin(admin.ModelAdmin):
     """
 
     list_display = (
-        'reference', 'buyer_name', 'party_size', 'status', 'holds_seat',
+        'reference', 'buyer_name', 'party_size', 'status', 'seat_light',
         'amount_display', 'priced_at', 'sender_account_name', 'confirmed_at',
         'refund_state_display',
-        'reference', 'buyer_name', 'party_size', 'status', 'seat_light',
-        'amount_display', 'sender_account_name', 'confirmed_at', 'refund_state_display',
     )
     list_filter = ('status', RefundFilter, StaleConfirmedFilter)
     search_fields = (

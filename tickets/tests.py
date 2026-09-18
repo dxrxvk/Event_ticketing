@@ -13,7 +13,8 @@ from rest_framework.test import APIClient
 from . import exports, services
 from .serializers import pay_screen_payload
 from .models import (
-    Booking, EventSettings, Guest, PriceTier, SongRequest, seats_taken,
+    MAX_TICKETS_PER_BOOKING, Booking, EventSettings, Guest, PriceTier, SongRequest,
+    seats_taken,
 )
 from . import admin, exports, services
 from .models import Booking, EventSettings, Guest, SongRequest, seats_taken
@@ -692,17 +693,32 @@ class PriceLadderTests(TestCase):
             [(1, 4, PRICE), (5, 6, TIER_TWO_PRICE)],
         )
 
-    def test_the_position_that_prices_a_booking_is_the_one_capacity_counts(self):
-        """The ladder and the guest list must describe the same event.
+    def test_price_position_tracks_occupancy_until_the_ladder_has_climbed_higher(self):
+        """Position is occupancy or the high-water mark, whichever is further up.
 
-        If these two ever diverge, the Nth ticket sold is not the Nth ticket charged
-        for, and the published ladder becomes a lie in a way nobody notices until the
-        bank statement.
+        With nothing abandoned the two are the same number, which is the ordinary case
+        and the one worth pinning: the Nth ticket sold is the Nth ticket charged for.
         """
         make_booking(quantity=3, status=Booking.Status.SELF_CONFIRMED)
         event = EventSettings.load()
         self.assertEqual(event.next_seat_position(), seats_taken(event))
         self.assertEqual(event.next_seat_position(), 3)
+
+    def test_price_position_never_drops_below_the_high_water_mark(self):
+        event = EventSettings.load()
+        event.seats_high_water = 7
+        event.save()
+        # The room is empty, but the ladder has already reached seat 8.
+        self.assertEqual(event.price_position(0), 7)
+        # Occupancy overtakes it again once real bookings pass that point.
+        self.assertEqual(event.price_position(9), 9)
+
+    def test_advancing_the_high_water_mark_only_goes_up(self):
+        event = EventSettings.load()
+        self.assertTrue(event.advance_price_position(5))
+        self.assertFalse(event.advance_price_position(3))
+        event.refresh_from_db()
+        self.assertEqual(event.seats_high_water, 5)
 
 
 class TierPricingTests(TestCase):
@@ -764,16 +780,6 @@ class TierPricingTests(TestCase):
         """
         make_booking(quantity=TIER_TWO_AT)  # pending, fresh
         self.assertEqual(self.post().json()['total_amount'], TIER_TWO_PRICE)
-
-    def test_a_pending_booking_past_its_ttl_gives_its_price_slot_back(self):
-        # It no longer holds a seat, so it must not hold a rung either, or the ladder
-        # would run out of cheap seats that nobody ever bought.
-        make_booking(quantity=TIER_TWO_AT, minutes_old=46)
-        self.assertEqual(self.post().json()['total_amount'], PRICE)
-
-    def test_a_cancelled_booking_gives_its_price_slot_back(self):
-        make_booking(quantity=TIER_TWO_AT, status=Booking.Status.CANCELLED)
-        self.assertEqual(self.post().json()['total_amount'], PRICE)
 
     def test_the_quote_is_frozen_and_survives_the_ladder_moving(self):
         """The buyer read this number off the pay screen and typed it into a bank.
@@ -869,29 +875,109 @@ class TierPricingTests(TestCase):
                                 revolut_price_cents=5, ticket_price_cents=200_000)
         self.assertEqual(event.revolut_price_for(100_000), 3)
 
-    def test_the_ladder_recycles_a_band_when_bookings_stop_holding_seats(self):
-        """A deliberate property, pinned so it cannot change by accident.
+    def test_a_lapsed_booking_frees_its_seat_but_not_its_price(self):
+        """The core of a monotonic ladder, and the reason capacity and price are read
+        from two different numbers.
 
-        Position is current occupancy, not cumulative sales ever made, so a band that
-        empties is offered again. The alternative -- a counter that only ever rises --
-        would let 50 people who filled the form and never paid burn the whole 5.000
-        band, and the event would "sell out" its cheap seats without selling them.
-
-        The cost, accepted: the advertised price can go down as well as up, and a
-        buyer quoted the dearer band can end up paying more than someone who booked
-        after them. Capacity behaves the same way, and for the same reason.
+        A booking that lapses genuinely frees its seat -- the room is empty again and
+        someone must be able to book into it. What it does not do is roll the price
+        back. Otherwise a launch burst that mostly abandons would hand the cheap band
+        out twice, and the event would sell far more than 50 tickets at 5.000.
         """
-        # The cheap band fills with people who then abandon.
-        stale = make_booking(quantity=TIER_TWO_AT)
+        first = self.post(count=TIER_TWO_AT, whatsapp='+5491100000011')
+        self.assertEqual(first.status_code, 201)
+        # The cheap band is gone, so the next buyer is in the second.
+        self.assertEqual(self.post(whatsapp='+5491100000022').json()['total_amount'],
+                         TIER_TWO_PRICE)
+
+        Booking.objects.all().update(
+            created_at=timezone.now() - timedelta(minutes=46)
+        )
+
+        # The seats really are back: occupancy is zero and the room is bookable.
+        self.assertEqual(seats_taken(EventSettings.load()), 0)
+        self.assertEqual(
+            self.client.get('/api/availability/').json()['remaining'], CAPACITY
+        )
+        # The price is not back.
+        self.assertEqual(self.post(whatsapp='+5491100000033').json()['total_amount'],
+                         TIER_TWO_PRICE)
+
+    def test_a_cancelled_booking_frees_its_seat_but_not_its_price(self):
+        self.post(count=TIER_TWO_AT, whatsapp='+5491100000044')
+        Booking.objects.all().update(status=Booking.Status.CANCELLED)
+        self.assertEqual(seats_taken(EventSettings.load()), 0)
+        self.assertEqual(self.post(whatsapp='+5491100000055').json()['total_amount'],
+                         TIER_TWO_PRICE)
+
+    def test_the_quoted_price_never_falls_across_a_sale_with_churn(self):
+        """The property stated as a property, rather than as one scenario.
+
+        Walks a sale where every booking is abandoned immediately, which is the worst
+        case for a ladder keyed on occupancy: the room is empty the whole way through,
+        so a non-monotonic ladder would quote 5.000 every single time.
+        """
+        quotes = []
+        for i in range(CAPACITY):
+            quotes.append(self.post(whatsapp=f'+54911000{i:05d}').json()['total_amount'])
+            Booking.objects.all().update(
+                created_at=timezone.now() - timedelta(minutes=46)
+            )
+        self.assertEqual(quotes, sorted(quotes), 'the ladder walked backwards')
+        # And it really did climb rather than just not falling.
+        self.assertEqual(quotes[0], PRICE)
+        self.assertEqual(quotes[-1], TIER_THREE_PRICE)
+
+    def test_abandoned_bookings_never_cost_the_event_a_seat(self):
+        """The safety property that makes the trade acceptable.
+
+        Pricing climbing past the room must never be what refuses a booking. The event
+        can still fill every seat after any amount of churn -- those buyers just pay
+        the price the ladder has reached.
+        """
+        for i in range(CAPACITY):
+            self.post(whatsapp=f'+54911100{i:05d}')
+            Booking.objects.all().update(
+                created_at=timezone.now() - timedelta(minutes=46)
+            )
+        # The ladder is now past the end of the room; the room is still empty.
+        event = EventSettings.load()
+        self.assertGreaterEqual(event.seats_high_water, CAPACITY)
+        self.assertEqual(seats_taken(event), 0)
+
+        # Every remaining seat is still sellable.
+        response = self.post(count=MAX_TICKETS_PER_BOOKING, whatsapp='+5491199999999')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['total_amount'],
+                         MAX_TICKETS_PER_BOOKING * TIER_THREE_PRICE)
+
+    def test_the_admin_can_re_open_a_cheaper_band_by_hand(self):
+        """The escape hatch. A bulk cancellation should be forgivable without SQL."""
+        self.post(count=TIER_TWO_AT, whatsapp='+5491100000066')
+        Booking.objects.all().update(status=Booking.Status.CANCELLED)
         self.assertEqual(self.post(whatsapp='+5491100000077').json()['total_amount'],
                          TIER_TWO_PRICE)
 
-        Booking.objects.filter(pk=stale.pk).update(
-            created_at=timezone.now() - timedelta(minutes=46)
-        )
-        # They no longer hold seats, so the band is genuinely free again.
+        event = EventSettings.load()
+        event.seats_high_water = 0
+        event.save()
+        Booking.objects.all().update(status=Booking.Status.CANCELLED)
         self.assertEqual(self.post(whatsapp='+5491100000088').json()['total_amount'],
                          PRICE)
+
+    def test_availability_advertises_the_price_the_booking_endpoint_will_charge(self):
+        """The two must not disagree, or the page quotes a price it cannot honour."""
+        self.post(count=TIER_TWO_AT, whatsapp='+5491100000099')
+        Booking.objects.all().update(
+            created_at=timezone.now() - timedelta(minutes=46)
+        )
+        body = self.client.get('/api/availability/').json()
+        self.assertEqual(body['current_price_cents'], TIER_TWO_PRICE)
+        self.assertEqual(body['next_seat'], TIER_TWO_AT + 1)
+        # Seats are free again even though the price has moved on.
+        self.assertEqual(body['remaining'], CAPACITY)
+        self.assertEqual(self.post(whatsapp='+5491100001111').json()['total_amount'],
+                         body['current_price_cents'])
 
 
 class AvailabilityLadderTests(TestCase):

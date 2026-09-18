@@ -20,22 +20,10 @@ const ladder = computed(() => ladderFrom(props.availability) ?? bakedLadder())
 const leadPrice = computed(() => formatPesos(ladder.value[0].price))
 const isTiered = computed(() => ladder.value.length > 1)
 
-/** "first 50 at this price, then 7.000, then 9.000" -- the ladder in one line. */
-const ladderNote = computed(() => {
-  if (!isTiered.value) return 'per person'
-  const [first, ...rest] = ladder.value
-  const steps = rest.map((band) => `then ${formatPesos(band.price)}`).join(', ')
-  return `per person for the first ${first.toSeat}, ${steps}`
-})
-
-// What the next ticket sold actually costs, once the server has said so. Shown only
-// when it has moved past the first band -- before that it would just repeat the line
-// above.
-const currentPrice = computed(() => {
-  const display = props.availability?.current_price_display
-  if (!display || props.availability?.sold_out) return null
-  return display === leadPrice.value ? null : display
-})
+// Just "per person". The ladder itself is spelled out in PriceTiers.vue directly
+// below, and saying it twice on one screen made the facts list the louder of the two
+// while being the less accurate -- it could not show which band was actually on sale.
+const ladderNote = computed(() => (isTiered.value ? 'per person, rising' : 'per person'))
 const title = ref(null)
 
 defineExpose({
@@ -69,9 +57,6 @@ defineExpose({
         <dd>
           <span>{{ isTiered ? 'from ' : '' }}{{ leadPrice }}</span>
           <span class="facts__sub">{{ ladderNote }}</span>
-          <span v-if="currentPrice" class="facts__now">
-            Right now: {{ currentPrice }} per person
-          </span>
         </dd>
       </div>
     </dl>
@@ -124,11 +109,4 @@ defineExpose({
   color: var(--ink-muted);
 }
 
-.facts__now {
-  display: block;
-  margin-top: var(--space-2);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--accent-strong);
-}
 </style>

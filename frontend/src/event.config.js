@@ -131,3 +131,35 @@ export function quoteFor(quantity, ladder, nextSeat = 1) {
     total: lines.reduce((sum, line) => sum + line.quantity * line.price, 0),
   }
 }
+
+/**
+ * Label each band of the ladder against the seat being sold next.
+ *
+ * Pure, and exported rather than living inside the component, so the boundaries can be
+ * tested directly -- "is seat 50 still in the first band" is exactly the kind of
+ * off-by-one that renders fine and prices wrong.
+ *
+ * `nextSeat` is 1-based and comes from the API, which derives it from a high-water
+ * mark rather than current occupancy. Recomputing it from seats taken would let the
+ * boxes advertise a band the booking endpoint will not honour.
+ */
+export function tierStates(ladder, nextSeat = 1, soldOut = false) {
+  return ladder.map((band) => {
+    const size = band.toSeat - band.fromSeat + 1
+
+    let state = 'locked'
+    if (soldOut || nextSeat > band.toSeat) state = 'gone'
+    else if (nextSeat >= band.fromSeat) state = 'open'
+
+    const sold = state === 'gone' ? size : state === 'open' ? nextSeat - band.fromSeat : 0
+
+    return {
+      ...band,
+      size,
+      state,
+      sold,
+      left: size - sold,
+      percent: Math.round((sold / size) * 100),
+    }
+  })
+}

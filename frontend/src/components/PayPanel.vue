@@ -75,16 +75,26 @@ const limitHelpLink = computed(() => {
       </p>
     </div>
 
-    <div v-if="booking.revolut" class="card">
-      <p class="eyebrow">Paying from outside Argentina?</p>
-      <p class="revolut__lead">
+    <!--
+      A native <details>, not a v-if toggle: the browser gives keyboard operation, focus
+      order and the expanded/collapsed announcement for free, and Ctrl-F inside a closed
+      one still finds the Revtag. Collapsed because the peso rail above is the path
+      almost everyone takes -- a third open card reads as a third equal option and
+      invites someone with a local account to send pesos to a Revolut account.
+      The amount is optional: usually there is only a note, because ARS moves daily.
+    -->
+    <details v-if="booking.revolut" class="card revolut">
+      <summary class="revolut__summary">Paying from outside Argentina?</summary>
+      <p v-if="booking.revolut.amount_display" class="revolut__lead">
         Send <strong>{{ booking.revolut.amount_display }}</strong> via Revolut instead.
       </p>
+      <!-- Interpolated, never v-html: this is organiser-typed text from the admin. -->
+      <p v-if="booking.revolut.note" class="revolut__note">{{ booking.revolut.note }}</p>
       <CopyField label="Revtag" :value="`@${booking.revolut.tag}`" mono />
       <a class="revolut__link" :href="booking.revolut.link" target="_blank" rel="noopener">
         Open in Revolut
       </a>
-    </div>
+    </details>
 
     <div class="card">
       <CopyField
@@ -163,10 +173,61 @@ const limitHelpLink = computed(() => {
   color: var(--ink-muted);
 }
 
-.revolut__lead {
-  margin-top: var(--space-2);
-  margin-bottom: var(--space-4);
+.revolut__summary {
+  /* Both resets are needed: Firefox draws the marker via list-style, Safari via the
+     -webkit pseudo-element. Without them the custom +/- sits next to a stray triangle. */
+  list-style: none;
+  display: flex;
+  align-items: center;
+  min-height: 44px;             /* fingertip target, same as the form inputs */
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.revolut__summary::-webkit-details-marker { display: none; }
+
+.revolut__summary::after {
+  content: '+';
+  margin-left: auto;
+  font-size: var(--text-lg);
+  line-height: 1;
   color: var(--ink-muted);
+}
+
+.revolut[open] .revolut__summary::after { content: '−'; }
+
+.revolut__summary:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.revolut__lead {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+}
+
+/* pre-line so the line breaks the organiser typed into the admin textarea survive.
+   The note is the usual case -- a fixed figure goes stale, the sentence does not. */
+.revolut__note {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+  white-space: pre-line;
+}
+
+/* When both render, the note follows the amount and needs no second rule above it. */
+.revolut__lead + .revolut__note {
+  margin-top: var(--space-2);
+  padding-top: 0;
+  border-top: 0;
 }
 
 .revolut__link {

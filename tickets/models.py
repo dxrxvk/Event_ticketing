@@ -19,6 +19,18 @@ MAX_TICKETS_PER_BOOKING = 8
 MAX_SONG_REQUESTS = 3
 
 
+class _LiteralMissing(dict):
+    """A format_map() mapping that leaves unknown tokens as the literal text they were.
+
+    `'{foo} {total}'.format_map(_LiteralMissing(total='5.000'))` -> `'{foo} 5.000'`.
+    str.format would raise KeyError, which in `revolut_note` means one typo in an admin
+    textarea takes down the pay screen for buyers who have already sent money.
+    """
+
+    def __missing__(self, key):
+        return '{' + key + '}'
+
+
 def generate_reference():
     return secrets.token_urlsafe(REFERENCE_BYTES)
 
@@ -64,23 +76,38 @@ class EventSettings(models.Model):
         help_text='Used for wa.me links on the sold-out and error screens.',
     )
 
-    # Second destination for guests paying from outside Argentina: one flat figure per
-    # ticket in one currency, on a second rail. Still never per-person variation. A blank
-    # tag hides the whole block on the pay screen.
+    # Second destination for guests paying from outside Argentina, on a second rail.
+    # Still never per-person variation. A blank tag hides the whole block on the pay
+    # screen. What the block *says* is either a note, a fixed figure, or both -- see
+    # revolut_is_shown().
     revolut_tag = models.CharField(
         max_length=50,
         blank=True,
         help_text='Revtag without the @. Blank hides Revolut on the pay screen.',
     )
+    revolut_note = models.TextField(
+        blank=True,
+        help_text='What payers abroad read, instead of or as well as a fixed figure. '
+                  'Write {total} for this booking\'s peso total or {price} for its '
+                  'per-ticket price and the sentence follows the price ladder without '
+                  'being retyped -- both arrive already formatted (5.000). e.g. "ARS '
+                  'moves daily, so send the equivalent of {total} ARS in USD or GBP and '
+                  'message me once you have."',
+    )
     revolut_currency = models.CharField(
         max_length=3,
         blank=True,
-        help_text='ISO code the Revolut price is in, e.g. EUR.',
+        help_text='ISO code the Revolut price is in, e.g. EUR. Required only if you set '
+                  'a price below.',
     )
     revolut_price_cents = models.PositiveIntegerField(
-        default=0,
-        help_text='Integer minor units in that currency: 500 = 5.00. Flat for everyone '
-                  'paying via Revolut.',
+        null=True,
+        blank=True,
+        default=None,
+        help_text='Optional. Integer minor units in the currency above: 500 = 5.00, the '
+                  'FIRST-band figure, scaled up for dearer bands. Leave it blank and the '
+                  'note alone is shown -- ARS moves daily, so a pinned figure goes stale '
+                  'within a week.',
     )
 
     seats_high_water = models.PositiveIntegerField(
@@ -118,17 +145,77 @@ class EventSettings(models.Model):
     def clean(self):
         super().clean()
         self._normalise_revolut()
-        if self.revolut_tag and not (self.revolut_currency and self.revolut_price_cents):
+        # A tag with nothing to say would publish a bare Revtag and no amount, leaving
+        # the buyer to guess what to send. A note is enough on its own; so is a priced
+        # pair; so is both. Nothing is not.
+        if self.revolut_tag and not self.revolut_is_shown():
             raise ValidationError(
-                'Revolut needs a currency and a price above zero. Leave the tag blank to '
-                'hide Revolut instead.'
+                'Revolut needs either a note telling payers how much to send, or a '
+                'currency and a price. Leave the tag blank to hide Revolut instead.'
             )
+        if self.revolut_price_cents and not self.revolut_currency:
+            raise ValidationError('A Revolut price needs a currency.')
+
+    def revolut_is_priced(self):
+        """Whether a fixed Revolut figure can be quoted.
+
+        Both halves are needed: an amount with no currency is unreadable, and a currency
+        with no amount is nothing. `revolut_price_cents` is None on a row that never set
+        one and 0 on a row saved before the field became optional -- both are falsy, so
+        both mean the same thing here, which is the point of not distinguishing them.
+        """
+        return bool(self.revolut_currency and self.revolut_price_cents)
+
+    def revolut_is_shown(self):
+        """Whether the pay screen shows a Revolut block at all.
+
+        **The one definition.** `clean()` refuses a tag that fails it and
+        `revolut_payload()` returns None on it, so the admin cannot save a state the pay
+        screen would render as an empty box.
+        """
+        return bool(self.revolut_tag and (self.revolut_note or self.revolut_is_priced()))
+
+    def render_revolut_note(self, booking):
+        """`revolut_note` with {total} and {price} filled in for this booking.
+
+        The tokens exist so the sentence tracks the ladder: the organiser writes "send
+        the equivalent of {total} ARS" once and a buyer in the 9.000 band reads their own
+        figure, rather than the organiser retyping the note at every step and the text
+        quietly lying in between.
+
+        An unknown token renders literally rather than raising. This string is typed into
+        a live admin form by someone who is not thinking about str.format, and a stray
+        brace must not be able to 500 the pay screen of a buyer who has already paid.
+        """
+        if not self.revolut_note:
+            return ''
+
+        # The per-ticket price is plural for a party that straddles a step -- the same
+        # honesty as the peso breakdown on the pay screen, which shows "2 x 5.000 + 2 x
+        # 7.000" rather than one averaged number.
+        if booking.price_breakdown:
+            # dict.fromkeys de-duplicates while keeping ladder order, which set() would
+            # lose -- a party split 2/2 across one step must read "5.000 / 7.000", not
+            # the other way round and not "5.000 / 5.000 / 7.000".
+            seen = dict.fromkeys(
+                format_ars(line['unit_price_cents'])
+                for line in booking.price_breakdown
+            )
+            price = ' / '.join(seen)
+        else:
+            price = format_ars(self.ticket_price_cents)
+
+        return self.revolut_note.format_map(_LiteralMissing(
+            total=format_ars(booking.total_amount),
+            price=price,
+        ))
 
     def _normalise_revolut(self):
         # Revolut shows the tag as "@name"; accept it pasted that way, and with the
         # trailing space a paste often carries. A config slip must stay an admin edit.
         self.revolut_tag = self.revolut_tag.strip().lstrip('@')
         self.revolut_currency = self.revolut_currency.strip().upper()
+        self.revolut_note = self.revolut_note.strip()
 
     def save(self, *args, **kwargs):
         # Enforce the singleton: there is only ever one event.
@@ -246,7 +333,9 @@ class EventSettings(models.Model):
         Returns 0 when Revolut is unpriced, which hides the block entirely.
         """
         if not self.revolut_price_cents or not self.ticket_price_cents:
-            return self.revolut_price_cents
+            # `or 0`: the price is optional now, and None here would propagate into
+            # price_seats()'s sum() as a TypeError on every unpriced booking.
+            return self.revolut_price_cents or 0
         # Integer arithmetic with explicit half-up rounding. Not `round(a * b / c)`:
         # that is float division in a money path, which this project forbids, and
         # Python's round() is banker's rounding, so an exact .5 would go to even.

@@ -81,25 +81,36 @@ def revolut_amount_for(booking, event_settings):
 
 
 def revolut_payload(booking, event_settings):
-    """The second destination, or None until tag, currency and price are all set.
+    """The second destination, or None when there is nothing to show.
 
+    `revolut_is_shown()` is the one definition of "there is something to show" and the
+    admin's clean() refuses anything that fails it, so this cannot render an empty box.
     Gating on the tag alone would publish "EUR 0.00" to every buyer the moment the
     organiser saves a half-filled admin form.
+
+    The price is optional: ARS/USD moves daily, so the usual configuration is a note and
+    no figure. The amount keys are therefore always present but empty in that case --
+    a stable shape means the pay screen guards with one truthiness check per key rather
+    than distinguishing absent from null.
     """
-    if not (
-        event_settings.revolut_tag
-        and event_settings.revolut_currency
-        and event_settings.revolut_price_cents
-    ):
+    if not event_settings.revolut_is_shown():
         return None
-    amount = revolut_amount_for(booking, event_settings)
-    return {
+    payload = {
         'tag': event_settings.revolut_tag,
         'link': f'https://revolut.me/{event_settings.revolut_tag}',
-        'currency': event_settings.revolut_currency,
-        'amount_cents': amount,
-        'amount_display': format_minor_units(amount, event_settings.revolut_currency),
+        'note': event_settings.render_revolut_note(booking),
+        'currency': '',
+        'amount_cents': None,
+        'amount_display': '',
     }
+    if event_settings.revolut_is_priced():
+        amount = revolut_amount_for(booking, event_settings)
+        payload.update(
+            currency=event_settings.revolut_currency,
+            amount_cents=amount,
+            amount_display=format_minor_units(amount, event_settings.revolut_currency),
+        )
+    return payload
 
 
 def pay_screen_payload(booking, event_settings):

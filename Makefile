@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: race help install migrate makemigrations superuser shell run test test-robustness \
-        loadtest check-deploy frontend-install frontend-dev frontend-build frontend-preview
+        loadtest check-deploy test-all frontend-test frontend-install frontend-dev frontend-build frontend-preview
 
 help:
 	@echo "Backend (Django, via uv):"
@@ -16,11 +16,13 @@ help:
 	@echo "  make race            capacity + tier race tests, 10x (Postgres only)"
 	@echo "  make loadtest        concurrent reads+writes against a local gunicorn --threads 4"
 	@echo "  make check-deploy    manage.py check --deploy"
+	@echo "  make test-all        backend suite + frontend suite"
 	@echo ""
 	@echo "Frontend (Vite + Vue, in frontend/):"
 	@echo "  make frontend-install"
 	@echo "  make frontend-dev"
 	@echo "  make frontend-build"
+	@echo "  make frontend-test   Vitest: logic, components, contract, regressions"
 	@echo "  make frontend-preview"
 
 install:
@@ -93,6 +95,13 @@ frontend-dev:
 
 frontend-build:
 	cd frontend && npm run build
+
+frontend-test:
+	cd frontend && npm test
+
+# Both halves of the contract in contract/frontend_contract.json run here, so a drift
+# on either side fails this target.
+test-all: test frontend-test
 
 frontend-preview:
 	cd frontend && npm run preview

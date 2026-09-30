@@ -55,7 +55,16 @@ uv run python manage.py test tickets.test_robustness  # bursts, races, hostile i
 make race                                         # both race classes x10
 uv run python scripts/loadtest.py --base-url <url>    # read-only load test
 uv run python manage.py check --deploy            # pre-deploy audit
+
+cd frontend && npm test                           # frontend suite (Vitest)
+cd frontend && npm run test:watch                 # re-run on save
+make test-all                                     # backend + frontend
 ```
+
+The frontend tests live in `frontend/tests/`: the pricing and date logic, the API
+error mapping, the booking flow, each component, the whole mounted page, and
+`regressions.test.js`, where each test pins a mistake this project has already made
+(a missing `og.jpg`, the date showing as the 2nd, the Revolut note rendering as HTML).
 
 Postgres-only concurrency tests must run against a **local** Postgres, not Neon — the
 burst tests make hundreds of sequential requests inside one transaction, and at
@@ -113,6 +122,14 @@ most:
   which can be cold for up to a minute, wakes up. `warmUp()` pings `/api/health/` on
   mount and discards the result, so the backend is waking up while the visitor is
   still reading.
+- **The frontend's copies of backend facts are tested against one shared file.** The
+  page has to show a price before the backend wakes, so it copies the price ladder,
+  the peso formatting, the guest cap and the quote arithmetic by hand, and reads a
+  fixed set of API fields and error codes. `contract/frontend_contract.json` holds
+  those facts once. `tickets/test_contract.py` checks the backend still says them and
+  `frontend/tests/contract.test.js` checks the frontend agrees, so a change on one side
+  fails a test until the other side is updated too. It has already caught one gap:
+  `booking_not_confirmed` had no title on the page and showed as "Something went wrong".
 - **CSV exports are two separate files**, not one. The venue gets a names-only list;
   the organiser gets one with contact details and status. Contact columns get deleted
   after reconciliation to satisfy Argentina's data protection law (25.326), which

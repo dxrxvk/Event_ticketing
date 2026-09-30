@@ -1,0 +1,58 @@
+{
+  "_about": "Facts the frontend copies from the backend. tickets/test_contract.py checks the backend still says this; frontend/tests/contract.test.js checks the frontend still agrees. If either side changes, one of them fails until this file and the other side are updated too. All money is integer cents.",
+
+  "max_guests": 8,
+
+  "seeded_ladder": [
+    { "from_seat": 1, "to_seat": 50, "price_cents": 500000 },
+    { "from_seat": 51, "to_seat": 100, "price_cents": 700000 },
+    { "from_seat": 101, "to_seat": 130, "price_cents": 900000 }
+  ],
+
+  "format_ars": [
+    [0, "0"],
+    [90000, "900"],
+    [500000, "5.000"],
+    [2400000, "24.000"],
+    [117000000, "1.170.000"]
+  ],
+
+  "quotes": [
+    { "name": "first seat", "next_seat": 1, "quantity": 1,
+      "lines": [[1, 500000]], "total_cents": 500000 },
+    { "name": "full party in the first band", "next_seat": 1, "quantity": 8,
+      "lines": [[8, 500000]], "total_cents": 4000000 },
+    { "name": "seat 50 is still the first band", "next_seat": 50, "quantity": 1,
+      "lines": [[1, 500000]], "total_cents": 500000 },
+    { "name": "seat 51 is the second band", "next_seat": 51, "quantity": 1,
+      "lines": [[1, 700000]], "total_cents": 700000 },
+    { "name": "four straddling the first step", "next_seat": 49, "quantity": 4,
+      "lines": [[2, 500000], [2, 700000]], "total_cents": 2400000 },
+    { "name": "straddling the second step", "next_seat": 97, "quantity": 6,
+      "lines": [[4, 700000], [2, 900000]], "total_cents": 4600000 },
+    { "name": "last seat", "next_seat": 130, "quantity": 1,
+      "lines": [[1, 900000]], "total_cents": 900000 },
+    { "name": "past the end keeps the last price", "next_seat": 129, "quantity": 4,
+      "lines": [[2, 900000], [2, 900000]], "total_cents": 3600000 },
+    { "name": "far past the end still prices", "next_seat": 200, "quantity": 2,
+      "lines": [[2, 900000]], "total_cents": 1800000 }
+  ],
+
+  "availability_keys": [
+    "capacity", "remaining", "tiers", "next_seat", "current_price_display",
+    "sold_out", "sales_open", "venue", "event_date", "organiser_whatsapp"
+  ],
+  "tier_keys": ["from_seat", "to_seat", "price_cents"],
+
+  "booking_keys": [
+    "reference", "status", "quantity", "amount_display", "price_breakdown",
+    "alias", "cvu", "account_holder_name", "organiser_whatsapp", "revolut"
+  ],
+  "price_breakdown_keys": ["quantity", "unit_price_display"],
+  "revolut_keys": ["tag", "link", "note", "amount_display"],
+
+  "error_codes": [
+    "sold_out", "sales_closed", "booking_expired", "booking_cancelled",
+    "booking_not_confirmed", "not_found"
+  ]
+}

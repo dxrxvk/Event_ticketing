@@ -15,4 +15,10 @@ export default defineConfig({
       },
     },
   },
+  // Vitest reads this same file, so .vue files compile for tests exactly as they do for
+  // the build. A separate vitest.config.js would have to repeat the Vue plugin and drift.
+  test: {
+    environment: 'happy-dom',
+    include: ['tests/**/*.test.js'],
+  },
 })

@@ -12,6 +12,7 @@ const TITLES = {
   sales_closed: 'Bookings are closed',
   booking_expired: 'Your hold expired',
   booking_cancelled: 'This booking was cancelled',
+  booking_not_confirmed: "Your payment isn't confirmed yet",
   network: "Couldn't reach the server",
   not_found: 'Booking not found',
 }

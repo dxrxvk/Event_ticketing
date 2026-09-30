@@ -27,7 +27,7 @@ frontend must be readable before the backend (which sleeps after 15 min idle) wa
 ## Setup
 
 ```sh
-cp .env.example .env      # fill in SECRET_KEY and DATABASE_URL
+cp .env.example .env      # fill in SECRET_KEY; DATABASE_URL is optional (see below)
 uv sync                   # install dependencies from uv.lock
 
 uv run python manage.py migrate
@@ -43,14 +43,15 @@ npm install
 npm run dev                # proxies /api to Django on :8000
 ```
 
-Leaving `DATABASE_URL` blank, commented out or unset falls back to SQLite. **Note:** Neon has two connection
+Leaving `DATABASE_URL` blank, commented out or unset falls back to SQLite, which is
+enough for everything except the concurrency tests. **Note:** Neon has two connection
 strings — local development must use the **direct** host, not the pooled one, or the
 test runner's `CREATE`/`DROP DATABASE` calls fail.
 
 ## Commands
 
 ```sh
-uv run python manage.py test tickets              # business rules
+uv run python manage.py test tickets              # whole backend suite
 uv run python manage.py test tickets.test_robustness  # bursts, races, hostile input
 make race                                         # both race classes x10
 uv run python scripts/loadtest.py --base-url <url>    # read-only load test
@@ -66,7 +67,9 @@ error mapping, the booking flow, each component, the whole mounted page, and
 `regressions.test.js`, where each test pins a mistake this project has already made
 (a missing `og.jpg`, the date showing as the 2nd, the Revolut note rendering as HTML).
 
-Postgres-only concurrency tests must run against a **local** Postgres, not Neon — the
+On SQLite, 11 tests report as skipped. That is by design: they test the row lock,
+which SQLite cannot take (see [Concurrency](#concurrency)), and they run for real on
+Postgres. They must run against a **local** Postgres, not Neon — the
 burst tests make hundreds of sequential requests inside one transaction, and at
 ~190ms per round trip from Buenos Aires to Oregon a four-test class takes ten minutes
 and Neon drops the connection.
@@ -171,7 +174,8 @@ deliberate way to move the ladder back down is an admin editing
 **Pricing never blocks a sale.** If churn pushes the position past capacity, pricing
 just keeps quoting the last band rather than raising an error — only the occupancy
 check is allowed to refuse a booking. Price and capacity can disagree in exactly one
-direction (price can lag reality), and that's intentional.
+direction: after a cancellation the price stays ahead of current occupancy, never
+behind it, and that's intentional.
 
 **The quote is frozen, not recomputed.** `total_amount`, `price_breakdown`, and
 `revolut_amount_cents` are written to the row once, inside the same locked

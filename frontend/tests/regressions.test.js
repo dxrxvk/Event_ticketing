@@ -48,10 +48,10 @@ describe('link previews (WhatsApp)', () => {
 })
 
 describe('event date', () => {
-  // new Date('2026-10-03') is UTC midnight, which in Buenos Aires is still the evening
-  // of the 2nd. The baked date is parsed at midday -03:00 so the page names the 3rd.
-  it('names the 3rd, not the 2nd', () => {
-    expect(eventDateParts(null).day).toBe('Saturday 3 October')
+  // new Date('2026-10-09') is UTC midnight, which in Buenos Aires is still the evening
+  // of the 8th. The baked date is parsed at midday -03:00 so the page names the 9th.
+  it('names the 9th, not the 8th', () => {
+    expect(eventDateParts(null).day).toBe('Friday 9 October')
   })
 
   // No start time was ever decided, and a baked "21:00" would be read as fact by the

@@ -330,15 +330,15 @@ describe('ConfirmedPanel', () => {
   it('says TBD for the time and venue until the admin sets them', () => {
     const wrapper = mount(ConfirmedPanel, { props: props() })
     expect(wrapper.text()).toContain('2 spots are reserved')
-    expect(wrapper.text()).toContain('Saturday 3 October, time TBD')
+    expect(wrapper.text()).toContain('Friday 9 October, time TBD')
     expect(wrapper.text()).toContain(event.venue)
   })
 
   it('shows the admin venue and time once availability carries them', () => {
     const wrapper = mount(ConfirmedPanel, {
-      props: props({ availability: availability({ venue: 'Niceto Club', event_date: '2026-10-04T01:00:00Z' }) }),
+      props: props({ availability: availability({ venue: 'Niceto Club', event_date: '2026-10-10T01:00:00Z' }) }),
     })
-    expect(wrapper.text()).toContain('Saturday 3 October, 22:00')
+    expect(wrapper.text()).toContain('Friday 9 October, 22:00')
     expect(wrapper.text()).toContain('Niceto Club')
   })
 

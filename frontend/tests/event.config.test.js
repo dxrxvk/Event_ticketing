@@ -153,13 +153,13 @@ describe('tierStates', () => {
 
 describe('eventDateParts', () => {
   it('uses the baked date with no time until the API answers', () => {
-    expect(eventDateParts(null)).toEqual({ day: 'Saturday 3 October', time: '' })
+    expect(eventDateParts(null)).toEqual({ day: 'Friday 9 October', time: '' })
   })
 
   it('prefers the admin date and time, shown in Buenos Aires time', () => {
-    // 01:30 UTC on the 4th is 22:30 on the 3rd in Buenos Aires.
-    expect(eventDateParts({ event_date: '2026-10-04T01:30:00Z' })).toEqual({
-      day: 'Saturday 3 October',
+    // 01:30 UTC on the 10th is 22:30 on the 9th in Buenos Aires.
+    expect(eventDateParts({ event_date: '2026-10-10T01:30:00Z' })).toEqual({
+      day: 'Friday 9 October',
       time: '22:30',
     })
   })
@@ -167,7 +167,7 @@ describe('eventDateParts', () => {
   it('falls back to the baked date when the API date is blank or garbage', () => {
     expect(eventDateParts({ event_date: null }).time).toBe('')
     expect(eventDateParts({ event_date: 'not a date' })).toEqual({
-      day: 'Saturday 3 October',
+      day: 'Friday 9 October',
       time: '',
     })
   })

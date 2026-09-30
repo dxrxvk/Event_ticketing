@@ -58,7 +58,23 @@ class EventSettings(models.Model):
         validators=[MinValueValidator(1)],
         help_text='Integer cents. 500000 = 5.000 pesos. The price of the FIRST tier -- '
                   'what a ticket costs until the first PriceTier threshold is passed. '
-                  'With no tiers configured this is a flat price for everyone.',
+                  'With no tiers configured this is a flat price for everyone. Ignored '
+                  'while tiered pricing is switched off.',
+    )
+    # The flat-rate switch. Off sells every seat at flat_price_cents and leaves the ladder
+    # (the base price above and the tier rows) untouched, so switching back on restores
+    # it exactly -- nothing to re-enter, and nothing deleted to go flat.
+    tiered_pricing = models.BooleanField(
+        default=True,
+        help_text='Untick to sell every ticket at the flat price below instead of the '
+                  'ladder. The tiers are kept, and come back when this is ticked again.',
+    )
+    flat_price_cents = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        help_text='Integer cents. 700000 = 7.000 pesos. Used only while tiered pricing '
+                  'is off, and required then.',
     )
 
     # Payment destination, shown on the pay screen. The API response is authoritative:
@@ -155,6 +171,11 @@ class EventSettings(models.Model):
             )
         if self.revolut_price_cents and not self.revolut_currency:
             raise ValidationError('A Revolut price needs a currency.')
+        # Flat with no flat price would be an event with no price at all.
+        if not self.tiered_pricing and not self.flat_price_cents:
+            raise ValidationError({
+                'flat_price_cents': 'Set a flat price before switching tiered pricing off.',
+            })
 
     def revolut_is_priced(self):
         """Whether a fixed Revolut figure can be quoted.
@@ -203,7 +224,7 @@ class EventSettings(models.Model):
             )
             price = ' / '.join(seen)
         else:
-            price = format_ars(self.ticket_price_cents)
+            price = format_ars(self.base_price_cents())
 
         return self.revolut_note.format_map(_LiteralMissing(
             total=format_ars(booking.total_amount),
@@ -287,6 +308,13 @@ class EventSettings(models.Model):
         self.save(update_fields=['seats_high_water'])
         return True
 
+    def base_price_cents(self):
+        """What the first seat costs: the flat price while tiered pricing is off, else
+        the ladder's first band."""
+        if not self.tiered_pricing and self.flat_price_cents:
+            return self.flat_price_cents
+        return self.ticket_price_cents
+
     def price_ladder(self):
         """The ladder as inclusive 1-based seat ranges, cheapest first.
 
@@ -296,8 +324,20 @@ class EventSettings(models.Model):
         same boundary twice and watching them drift.
 
         The last band runs to `capacity`; with no tiers it is the whole event at the
-        base price.
+        base price. With tiered pricing switched off it is the whole event at the flat
+        price, and the tier rows are not read at all -- this is the one place the switch
+        is honoured, so every quote, the API and the admin readout follow it together.
+        The high-water mark keeps advancing while flat, so switching back on resumes the
+        ladder where the room has reached rather than reopening the cheap band.
         """
+        if not self.tiered_pricing and self.flat_price_cents:
+            price = self.flat_price_cents
+            return [{
+                'from_seat': 1,
+                'to_seat': max(self.capacity, 1),
+                'price_cents': price,
+                'revolut_price_cents': self.revolut_price_for(price),
+            }]
         tiers = list(self.price_tiers.all())
         bands = []
         price = self.ticket_price_cents

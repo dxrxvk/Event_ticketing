@@ -17,7 +17,11 @@ vi.mock('../src/api.js', async (importOriginal) => {
 
 const OPEN = {
   capacity: 130, taken: 0, remaining: 130, next_seat: 1,
-  tiers: [{ from_seat: 1, to_seat: 130, price_cents: 500000, price_display: '5.000' }],
+  tiers: [
+    { from_seat: 1, to_seat: 50, price_cents: 500000, price_display: '5.000' },
+    { from_seat: 51, to_seat: 100, price_cents: 700000, price_display: '7.000' },
+    { from_seat: 101, to_seat: 130, price_cents: 900000, price_display: '9.000' },
+  ],
   current_price_display: '5.000', sold_out: false, sales_open: true, venue: '', event_date: null,
 }
 
@@ -54,6 +58,18 @@ describe('App', () => {
     await uncover(wrapper)
     expect(wrapper.find('form').exists()).toBe(true)
     expect(wrapper.find('.tiers').exists()).toBe(true)
+  })
+
+  it('drops the ladder when tiered pricing is switched off', async () => {
+    const flat = {
+      ...OPEN,
+      tiers: [{ from_seat: 1, to_seat: 130, price_cents: 600000, price_display: '6.000' }],
+      current_price_display: '6.000',
+    }
+    const wrapper = await mountApp(flat)
+    await uncover(wrapper)
+    expect(wrapper.find('form').exists()).toBe(true)
+    expect(wrapper.find('.tiers').exists()).toBe(false)
   })
 
   it('replaces the form with a sold-out card', async () => {

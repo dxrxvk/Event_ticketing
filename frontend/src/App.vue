@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { warmUp } from './api.js'
 import AvailabilityBadge from './components/AvailabilityBadge.vue'
@@ -10,7 +10,7 @@ import PayPanel from './components/PayPanel.vue'
 import PriceTiers from './components/PriceTiers.vue'
 import StatusNotice from './components/StatusNotice.vue'
 import { useBooking } from './composables/useBooking.js'
-import { event, whatsappLink } from './event.config.js'
+import { bakedLadder, event, ladderFrom, whatsappLink } from './event.config.js'
 
 const {
   step, booking, availability, notice, submitting, confirming, fieldErrors,
@@ -30,6 +30,13 @@ const soldOutLink = whatsappLink(`Hi! Is there any chance of a spot for ${event.
 // Presentation, not booking state: the page opens on the poster alone and a tap turns it
 // over. Meanwhile warmUp() above has already started waking the backend.
 const covered = ref(Boolean(event.posterUrl))
+
+// One band means the organiser has switched tiered pricing off: a lone box would read
+// as a ladder with nothing above it, and "the price only goes up" would be false. The
+// form's total already names the price. Before availability answers this reads the
+// baked ladder, so a flat event shows the boxes for a moment and then drops them --
+// accepted, because baking the switch in would make every toggle a redeploy.
+const tiered = computed(() => (ladderFrom(availability.value) ?? bakedLadder()).length > 1)
 </script>
 
 <template>
@@ -46,7 +53,7 @@ const covered = ref(Boolean(event.posterUrl))
           <!-- Only while choosing. On the pay and confirmed screens the buyer already
                has a price, and the ladder would be noise next to the amount they owe. -->
           <PriceTiers
-            v-if="step === 'form' && canBook"
+            v-if="step === 'form' && canBook && tiered"
             :availability="availability"
             class="app__tiers"
           />

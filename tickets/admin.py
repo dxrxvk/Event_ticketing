@@ -148,8 +148,12 @@ class EventSettingsAdmin(admin.ModelAdmin):
                        'capacity_readout'),
         }),
         ('Price ladder', {
-            'fields': ('ticket_price_cents', 'seats_high_water', 'price_ladder_readout'),
-            'description': 'The price below is what the FIRST tier costs. Each row in '
+            'fields': ('tiered_pricing', 'flat_price_cents', 'ticket_price_cents',
+                       'seats_high_water', 'price_ladder_readout'),
+            'description': 'Untick "tiered pricing" to sell every ticket at the flat price '
+                           'instead; the tiers stay saved and return when it is ticked '
+                           'again. Switching never re-prices an existing booking. '
+                           'With tiered pricing on, the base price is what the FIRST tier costs. Each row in '
                            '"Price tiers" at the bottom of this page raises it from a '
                            'given seat on. Changing the ladder never re-prices a booking '
                            'that already exists -- its quote was frozen when it was made. '

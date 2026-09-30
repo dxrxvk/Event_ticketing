@@ -144,6 +144,11 @@ event.
     per step and nothing to reconcile) and `price_cents`. No tiers configured is exactly
     the old flat behaviour, and `PriceLadderTests.test_no_tiers_is_the_old_flat_price`
     guards that.
+  - **`EventSettings.tiered_pricing` is the flat-rate switch.** Off, `price_ladder()`
+    returns one band at `flat_price_cents` (required then, by `clean()`) and never reads
+    the tier rows, so switching back on restores the ladder untouched. The high-water
+    mark keeps advancing while flat. The page hides the ladder boxes when `tiers` has
+    one band. `FlatRateSwitchTests` covers it.
   - **Which band a booking gets is decided by `EventSettings.price_position(taken)`,**
     and nothing else computes a position. It is one method precisely so the seat rule
     can change without hunting: **if a `pending` booking ever stops holding a seat,

@@ -38,6 +38,8 @@ def configure_event(**overrides):
     defaults = {
         'capacity': CAPACITY,
         'ticket_price_cents': PRICE,
+        'tiered_pricing': True,
+        'flat_price_cents': None,
         'alias': 'test.alias.mp',
         'cvu': '0000003100000000000000',
         'account_holder_name': 'Test Holder',
@@ -1106,6 +1108,110 @@ class AvailabilityLadderTests(TestCase):
         body = self.body()
         self.assertTrue(body['sold_out'])
         self.assertEqual(body['current_price_cents'], TIER_THREE_PRICE)
+
+
+FLAT_PRICE = 600_000
+
+
+class FlatRateSwitchTests(TestCase):
+    """Tiered pricing switched off: one flat price, the ladder kept for switching back."""
+
+    def setUp(self):
+        self.event = configure_event()
+        default_tiers()
+        self.client = APIClient()
+
+    def go_flat(self, price=FLAT_PRICE):
+        self.event.tiered_pricing = False
+        self.event.flat_price_cents = price
+        self.event.save()
+
+    def bands(self):
+        return [(b['from_seat'], b['to_seat'], b['price_cents'])
+                for b in EventSettings.load().price_ladder()]
+
+    def post(self, count=1):
+        return self.client.post('/api/bookings/', {
+            'buyer_name': 'Ana Perez',
+            'buyer_whatsapp': '+5491111111111',
+            'guests': guest_payload(count),
+        }, format='json')
+
+    def test_flat_is_one_band_at_the_flat_price_and_ignores_the_tiers(self):
+        self.go_flat()
+        self.assertEqual(self.bands(), [(1, CAPACITY, FLAT_PRICE)])
+        # The tiers are kept, not deleted -- that is the point of a switch.
+        self.assertEqual(PriceTier.objects.count(), 2)
+
+    def test_a_party_across_a_tier_boundary_pays_the_flat_price_throughout(self):
+        self.go_flat()
+        breakdown, total, _ = self.event.price_seats(TIER_TWO_AT - 2, 4)
+        self.assertEqual(len(breakdown), 1)
+        self.assertEqual(total, 4 * FLAT_PRICE)
+
+    def test_switching_back_on_restores_the_ladder_exactly(self):
+        self.go_flat()
+        self.event.tiered_pricing = True
+        self.event.save()
+        self.assertEqual(
+            self.bands(),
+            [(1, 4, PRICE), (5, 8, TIER_TWO_PRICE), (9, 10, TIER_THREE_PRICE)],
+        )
+
+    def test_the_high_water_mark_keeps_climbing_while_flat(self):
+        """Seats sold while flat still count, so switching back on cannot reopen the
+        cheap band to the whole room."""
+        self.go_flat()
+        self.assertEqual(self.post(count=TIER_TWO_AT).status_code, 201)
+        Booking.objects.update(status=Booking.Status.CANCELLED)
+        self.event.refresh_from_db()
+        self.event.tiered_pricing = True
+        self.event.save()
+        self.assertEqual(self.post().json()['total_amount'], TIER_TWO_PRICE)
+
+    def test_flat_without_a_flat_price_is_refused(self):
+        self.event.tiered_pricing = False
+        self.event.flat_price_cents = None
+        with self.assertRaises(ValidationError) as caught:
+            self.event.full_clean()
+        self.assertIn('flat_price_cents', caught.exception.message_dict)
+
+    def test_availability_publishes_one_band_at_the_flat_price(self):
+        self.go_flat()
+        body = self.client.get('/api/availability/').json()
+        self.assertEqual(len(body['tiers']), 1)
+        self.assertEqual(body['current_price_cents'], FLAT_PRICE)
+        self.assertEqual(body['current_price_display'], '6.000')
+
+    def test_a_booking_freezes_the_flat_total(self):
+        self.go_flat()
+        body = self.post(count=2).json()
+        self.assertEqual(body['total_amount'], 2 * FLAT_PRICE)
+        self.assertEqual(body['pricing_display'], '2 x 6.000')
+
+    def test_switching_does_not_reprice_an_existing_booking(self):
+        created = self.post().json()
+        self.go_flat()
+        booking = Booking.objects.get(reference=created['reference'])
+        self.assertEqual(booking.total_amount, PRICE)
+
+    def test_revolut_scales_from_the_flat_price(self):
+        self.event.revolut_tag = 'someone'
+        self.event.revolut_currency = 'EUR'
+        self.event.revolut_price_cents = 500
+        self.go_flat()
+        _, _, revolut_total = self.event.price_seats(0, 1)
+        # 6.000 is 6/5 of the 5.000 base, so the Revolut figure scales the same way.
+        self.assertEqual(revolut_total, 600)
+
+    def test_the_revolut_note_price_token_reads_the_flat_price(self):
+        self.event.revolut_note = 'Send {price} ARS each'
+        self.go_flat()
+        booking = make_booking()
+        booking.price_breakdown = []
+        self.assertEqual(
+            self.event.render_revolut_note(booking), 'Send 6.000 ARS each',
+        )
 
 
 @skipUnless(

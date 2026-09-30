@@ -22,13 +22,12 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 136 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  and 154 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules (including the price ladder and its own race class);
   `tickets/test_robustness.py` holds bursts, throttling, hostile input,
-  admin edits mid-sale, rollback and contention. 11 tests skip on SQLite by design — see
-  and 96 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
-  business rules; `tickets/test_robustness.py` holds bursts, throttling, hostile input,
-  admin edits mid-sale, rollback and contention. 8 tests skip on SQLite by design — see
+  admin edits mid-sale, rollback and contention; `tickets/test_contract.py` holds the
+  backend half of the frontend contract (below); `tickets/test_settings.py` holds the
+  blank-`DATABASE_URL` fallback. 11 tests skip on SQLite by design — see
   the capacity invariant below — and run for real on Postgres. **Run the Postgres-only
   classes against a local Postgres, not against Neon from afar:** the burst tests make
   hundreds of sequential requests inside one transaction, and at ~190ms per round trip
@@ -41,6 +40,19 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 - **Frontend done:** `frontend/` holds a Vite + Vue 3 SPA covering hero, form, pay screen,
   confirmed screen and the sold-out / closed / expired states. `npm run dev` proxies
   `/api` to Django on :8000, so CORS does not exist in development.
+- **Frontend tests:** Vitest + `@vue/test-utils` + happy-dom, configured in the `test`
+  block of `vite.config.js` and kept in `frontend/tests/` (`npm test`, 117 tests):
+  pure logic, the API error mapping, the `useBooking` flow, components, the mounted
+  `App`, and `regressions.test.js`, where each test pins a mistake this project has
+  already made. `useBooking` state is module-level, so its tests `vi.resetModules()`
+  and re-import it per test.
+- **The frontend contract.** The page copies backend facts by hand (the seeded ladder,
+  `format_ars`, `MAX_TICKETS_PER_BOOKING`, the `price_seats()` arithmetic, the API keys
+  it reads, the error codes it titles). `contract/frontend_contract.json` holds them
+  once; `tickets/test_contract.py` checks the backend still says them and
+  `frontend/tests/contract.test.js` checks the frontend agrees, including a static scan
+  of `src/` for every `availability.x` / `booking.x` / `revolut.x` key read. **Changing
+  any of these means updating the JSON and both sides**; `make test-all` runs both.
 - **Deployed:** Render Blueprint from `render.yaml` (free plan, `build.sh`, WhiteNoise,
   gunicorn). The health check is `/admin/login/`; Render sends its own hostname as the
   `Host` header and `settings.py` reads it from `RENDER_EXTERNAL_HOSTNAME`, so
@@ -52,7 +64,9 @@ real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time
 - **Neon has two connection strings; use the right one.** Local `.env` must use the
   **direct** host: the test runner's `CREATE`/`DROP DATABASE` fails through the pooler
   ("being accessed by other users") and leaves a stray `test_neondb` behind. Leaving
-  `DATABASE_URL` blank still gives SQLite for a fresh clone.
+  `DATABASE_URL` blank still gives SQLite for a fresh clone: `settings.py` strips it and
+  treats empty as unset, because `dj_database_url.config()` only defaults when the
+  variable is absent and a `DATABASE_URL=` line sets it to `''`.
 - **Frontend deployed** as a Cloudflare Worker with static assets (`event-ticketing`),
   Git-connected to `main`: root directory `frontend`, build `npm run build`, output
   `dist`, build-time env `VITE_API_BASE=https://tickets-6cko.onrender.com`. With the root
@@ -107,6 +121,10 @@ uv run python scripts/loadtest.py --base-url https://tickets-6cko.onrender.com  
 uv run python manage.py check --deploy                        # pre-deploy audit (step 11)
 
 make race                                                     # both race classes x10
+
+cd frontend && npm test                                       # frontend suite (Vitest)
+cd frontend && npm run test:watch                             # re-run on save
+make test-all                                                 # backend + frontend
 ```
 
 There is no linter or formatter configured.

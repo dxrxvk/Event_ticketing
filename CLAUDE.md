@@ -17,7 +17,7 @@ Docker/Celery/Redis, no buyer accounts). Don't add those.
 
 Backend is deployed on Render at `tickets-6cko.onrender.com` against Neon Postgres; the
 frontend is deployed at `https://event-ticketing.dhruxk.workers.dev`. The page carries the
-real event details and poster ("Multiculture Mixer", 3 Oct 2026); the start time in
+real event details and poster ("Multiculture Mixer", 9 Oct 2026); the start time in
 `event.config.js` is a placeholder until confirmed.
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
@@ -296,7 +296,7 @@ Backend and frontend are deliberately separate deployments:
     and `event_date` from `EventSettings`, and `eventDateParts()` / `venueDisplay()` in
     `event.config.js` prefer those over the baked values. The baked `venue` is `'TBD'`
     and `dateISO` is **date-only** — no invented hour — parsed at midday in the -03:00
-    offset because `new Date('2026-10-03')` is UTC midnight, i.e. the 2nd in Buenos
+    offset because `new Date('2026-10-09')` is UTC midnight, i.e. the 8th in Buenos
     Aires. Blank in the admin renders "TBD", never a guess.
   - **All colour and type live in `src/styles/tokens.css`.** Restyling to match the event
     poster means editing that one file. Tokens are named semantically (`--accent`,

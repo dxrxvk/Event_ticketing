@@ -1,6 +1,6 @@
 # Multiculture Mixer — Ticketing
 
-A single-event ticketing site for a private party (coworkers, Buenos Aires, 3 Oct 2026).
+A single-event ticketing site for a private party (coworkers, Buenos Aires, 9 Oct 2026).
 No payment provider: buyers transfer to a personal bank alias and self-confirm on the
 site. The system tracks headcount against a guest-list cap and exports CSVs for the
 venue and the organiser.

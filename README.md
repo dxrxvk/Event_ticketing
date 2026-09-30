@@ -43,7 +43,7 @@ npm install
 npm run dev                # proxies /api to Django on :8000
 ```
 
-Leaving `DATABASE_URL` blank falls back to SQLite. **Note:** Neon has two connection
+Leaving `DATABASE_URL` blank, commented out or unset falls back to SQLite. **Note:** Neon has two connection
 strings — local development must use the **direct** host, not the pooled one, or the
 test runner's `CREATE`/`DROP DATABASE` calls fail.
 

@@ -22,7 +22,7 @@ real event details and poster ("Multiculture Mixer", 9 Oct 2026); the start time
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
-  and 154 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
+  and 171 tests (`uv run python manage.py test tickets`). `tickets/tests.py` holds the
   business rules (including the price ladder and its own race class);
   `tickets/test_robustness.py` holds bursts, throttling, hostile input,
   admin edits mid-sale, rollback and contention; `tickets/test_contract.py` holds the

@@ -1,13 +1,13 @@
 from datetime import timedelta
 
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.db.models import Case, Count, IntegerField, Value, When
 from django.shortcuts import render
 from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html
 
-from . import exports
+from . import exports, services
 from .models import (
     MAX_SONG_REQUESTS, Booking, EventSettings, Guest, PriceTier, SongRequest,
     seats_remaining, seats_taken,
@@ -315,7 +315,10 @@ class BookingAdmin(admin.ModelAdmin):
     # an editable JSON blob invites a typo that disagrees with total_amount, and the
     # two are what a refund is computed from.
     readonly_fields = ('reference', 'created_at', 'price_breakdown')
-    actions = ('mark_verified', 'mark_refund_owed', 'mark_refunded', 'expire_stale_pending')
+    actions = (
+        'mark_confirmed', 'mark_verified', 'mark_refund_owed', 'mark_refunded',
+        'expire_stale_pending',
+    )
 
     fieldsets = (
         ('Buyer', {
@@ -328,7 +331,10 @@ class BookingAdmin(admin.ModelAdmin):
                        'confirmed_at', 'verified_at'),
             'description': 'The quote was frozen when the booking was made. Editing the '
                            'ladder later does not change it, which is the point: the '
-                           'buyer already read this number off the pay screen.',
+                           'buyer already read this number off the pay screen. To '
+                           'confirm for a buyer who forgot to tap confirm, use the '
+                           '"Mark confirmed" action, which checks capacity; editing '
+                           'status here does not.',
         }),
         ('Money received', {
             'fields': ('amount_received_cents', 'verified_source'),
@@ -436,11 +442,59 @@ class BookingAdmin(admin.ModelAdmin):
     def refund_state_display(self, obj):
         return {'none': '-', 'owed': 'OWED', 'sent': 'sent'}[obj.refund_state]
 
+    def _confirm_for_buyer(self, booking):
+        """Run the buyer's own confirm on their behalf. Returns a failure reason or None.
+
+        Goes through services.confirm_booking() rather than writing the status, so the
+        admin gets the same guarantees as the button: confirmed_at is set, and a booking
+        that has aged out only gets its seats back if the room still has them.
+        """
+        try:
+            services.confirm_booking(booking.reference)
+        except services.BookingCancelled:
+            return 'cancelled'
+        except services.BookingExpired:
+            return 'expired and the event is full; raise capacity or cancel someone first'
+        return None
+
+    def _report_failures(self, request, failures):
+        if failures:
+            self.message_user(
+                request,
+                'Not changed: ' + '; '.join(f'{ref}: {why}' for ref, why in failures),
+                level=messages.WARNING,
+            )
+
+    @admin.action(description='Mark confirmed (transferred, forgot to tap confirm)')
+    def mark_confirmed(self, request, queryset):
+        confirmed, already, failures = 0, 0, []
+        for booking in queryset:
+            if booking.status in Booking.CONFIRMED_STATUSES:
+                already += 1
+                continue
+            failure = self._confirm_for_buyer(booking)
+            if failure:
+                failures.append((booking.reference, failure))
+            else:
+                confirmed += 1
+        self.message_user(
+            request, f'{confirmed} booking(s) confirmed, {already} already confirmed.'
+        )
+        self._report_failures(request, failures)
+
     @admin.action(description='Mark verified (payment seen in statement)')
     def mark_verified(self, request, queryset):
         now = timezone.now()
-        updated = 0
+        updated, failures = 0, []
         for booking in queryset:
+            # Writing VERIFIED straight onto an aged-out pending row would put its seats
+            # back without asking whether the room has them. Confirm first, under the lock.
+            if booking.status not in Booking.CONFIRMED_STATUSES:
+                failure = self._confirm_for_buyer(booking)
+                if failure:
+                    failures.append((booking.reference, failure))
+                    continue
+                booking.refresh_from_db()
             booking.status = Booking.Status.VERIFIED
             booking.verified_at = booking.verified_at or now
             # Record what arrived. Assume the full amount unless it is already known --
@@ -452,6 +506,7 @@ class BookingAdmin(admin.ModelAdmin):
             booking.save()
             updated += 1
         self.message_user(request, f'{updated} booking(s) marked verified.')
+        self._report_failures(request, failures)
 
     @admin.action(description='Mark refund owed (full amount received)')
     def mark_refund_owed(self, request, queryset):

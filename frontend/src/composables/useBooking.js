@@ -37,13 +37,32 @@ function noticeFrom(error) {
   }
 }
 
-async function loadAvailability() {
+// Seconds between retries when availability fails, ~90s in all: long enough to outlast a
+// Render cold start. Without the retry, one failed request during the wake-up left the
+// page on the baked ladder for as long as the tab stayed open.
+export const AVAILABILITY_RETRY_DELAYS = [2, 3, 5, 10, 15, 15, 20, 20]
+let retryTimer = null
+
+// `attempt` is internal. Callers use loadAvailability(), which can be bound to an event
+// without the Event object being read as an attempt number.
+function loadAvailability() {
+  return loadWithRetry(0)
+}
+
+async function loadWithRetry(attempt) {
+  // A fresh call supersedes a scheduled retry, so there is only ever one loop.
+  clearTimeout(retryTimer)
+  retryTimer = null
   try {
     availability.value = await api.fetchAvailability()
   } catch {
     // Deliberately silent. Availability is an enhancement; the page is fully usable
-    // without it and showing an error for a decorative counter is noise.
-    availability.value = null
+    // without it and showing an error for a decorative counter is noise. The last good
+    // answer is kept: it is closer to the truth than the baked fallback.
+    const delay = AVAILABILITY_RETRY_DELAYS[attempt]
+    if (delay !== undefined) {
+      retryTimer = setTimeout(() => loadWithRetry(attempt + 1), delay * 1000)
+    }
   }
 }
 

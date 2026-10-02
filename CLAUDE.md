@@ -41,7 +41,7 @@ real event details and poster ("Multiculture Mixer", 9 Oct 2026); the start time
   confirmed screen and the sold-out / closed / expired states. `npm run dev` proxies
   `/api` to Django on :8000, so CORS does not exist in development.
 - **Frontend tests:** Vitest + `@vue/test-utils` + happy-dom, configured in the `test`
-  block of `vite.config.js` and kept in `frontend/tests/` (`npm test`, 117 tests):
+  block of `vite.config.js` and kept in `frontend/tests/` (`npm test`, 122 tests):
   pure logic, the API error mapping, the `useBooking` flow, components, the mounted
   `App`, and `regressions.test.js`, where each test pins a mistake this project has
   already made. `useBooking` state is module-level, so its tests `vi.resetModules()`

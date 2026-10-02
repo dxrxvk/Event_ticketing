@@ -34,11 +34,12 @@ export const event = {
   // redeploy. This copy exists because S10.1 requires a price on screen before any API
   // call returns, and a page that says nothing about price reads as a scam.
   //
-  // `upTo` is the last seat at that price. Keep it in step with the PriceTier rows.
+  // `upTo` is the last seat at that price. Keep it in step with the admin: while
+  // `tiered_pricing` is off this is one band at the flat price up to capacity, and
+  // when it is on, the PriceTier rows. A stale copy shows wrong prices until the API
+  // answers, which on a cold start is up to a minute.
   priceTiers: [
-    { upTo: 50, price: 5000 },
-    { upTo: 100, price: 7000 },
-    { upTo: 130, price: 9000 },
+    { upTo: 60, price: 8000 },
   ],
 
   // '' means no poster panel renders and the hero stands on its own -- the page is

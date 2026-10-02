@@ -10,7 +10,7 @@ import PayPanel from '../src/components/PayPanel.vue'
 import PriceTiers from '../src/components/PriceTiers.vue'
 import StatusNotice from '../src/components/StatusNotice.vue'
 import { MAX_GUESTS } from '../src/constants.js'
-import { event } from '../src/event.config.js'
+import { bakedLadder, event, formatPesos } from '../src/event.config.js'
 
 /** The availability payload as the API sends it, with overrides. */
 function availability(overrides = {}) {
@@ -113,7 +113,7 @@ describe('BookingForm', () => {
   it('labels the total an estimate, from the baked ladder before the API answers', () => {
     const wrapper = mount(BookingForm)
     expect(wrapper.get('.total__label').text()).toBe('Estimated total')
-    expect(wrapper.get('.total__value').text()).toBe('5.000')
+    expect(wrapper.get('.total__value').text()).toBe(formatPesos(bakedLadder()[0].price))
   })
 
   it('prices from the live ladder and next seat once availability arrives', () => {
@@ -141,8 +141,8 @@ describe('PriceTiers', () => {
   it('renders the baked ladder before availability arrives', () => {
     const wrapper = mount(PriceTiers)
     const boxes = wrapper.findAll('.tier')
-    expect(boxes).toHaveLength(3)
-    expect(boxes.map((box) => box.get('.tier__price').text())).toEqual(['5.000', '7.000', '9.000'])
+    expect(boxes.map((box) => box.get('.tier__price').text()))
+      .toEqual(bakedLadder().map((band) => formatPesos(band.price)))
     expect(boxes[0].classes()).toContain('tier--open')
   })
 

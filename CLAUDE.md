@@ -41,7 +41,7 @@ real event details and poster ("Multiculture Mixer", 9 Oct 2026); the start time
   confirmed screen and the sold-out / closed / expired states. `npm run dev` proxies
   `/api` to Django on :8000, so CORS does not exist in development.
 - **Frontend tests:** Vitest + `@vue/test-utils` + happy-dom, configured in the `test`
-  block of `vite.config.js` and kept in `frontend/tests/` (`npm test`, 117 tests):
+  block of `vite.config.js` and kept in `frontend/tests/` (`npm test`, 122 tests):
   pure logic, the API error mapping, the `useBooking` flow, components, the mounted
   `App`, and `regressions.test.js`, where each test pins a mistake this project has
   already made. `useBooking` state is module-level, so its tests `vi.resetModules()`
@@ -286,8 +286,13 @@ Backend and frontend are deliberately separate deployments:
     `priceTiers`, `posterUrl`, WhatsApp), because §10.1 requires the page to render before
     any API call. The baked ladder is a placeholder only: `/api/availability/` sends
     `tiers`, `next_seat` and `current_price_display`, and every component prefers those.
-    Keep the two in step anyway — the baked one is what a visitor sees for the first
-    second, and it under-quotes once the cheap band is gone. That is why the form says
+    Keep the two in step anyway, by hand: the baked one follows the admin (one flat
+    band while `tiered_pricing` is off), not the migrations, so the contract test only
+    checks its shape. It is what a visitor sees until the API answers, and it
+    under-quotes once the cheap band is gone. `loadAvailability()` retries a failed
+    fetch for ~90s (`AVAILABILITY_RETRY_DELAYS`) and never drops a good answer for the
+    baked one; a single attempt once left a cold-start visitor on the stale ladder for
+    the life of the tab. That is why the form says
     **"Estimated total"** and the server's `amount_display` is authoritative on the pay
     screen. `quoteFor()` in `event.config.js` mirrors `price_seats()` in `models.py`.
     The **payment destination is not** baked in — alias, CVU and account holder come from

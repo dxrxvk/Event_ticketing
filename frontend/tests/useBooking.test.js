@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../src/api.js'
 
@@ -62,6 +62,63 @@ describe('availability', () => {
     expect(flow.availability.value).toBeNull()
     expect(flow.notice.value).toBeNull()
     expect(flow.canBook.value).toBe(true)
+  })
+})
+
+describe('availability retry', () => {
+  let delays
+
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    ;({ AVAILABILITY_RETRY_DELAYS: delays } = await import('../src/composables/useBooking.js'))
+  })
+  afterEach(() => vi.useRealTimers())
+
+  // One failed request during a cold start used to leave the page on the baked ladder
+  // for as long as the tab stayed open.
+  it('retries after a failure until the API answers', async () => {
+    const live = { sold_out: false, sales_open: true, tiers: [{ from_seat: 1, to_seat: 60 }] }
+    api.fetchAvailability
+      .mockRejectedValueOnce(new ApiError('network', 'down'))
+      .mockRejectedValueOnce(new ApiError('network', 'down'))
+      .mockResolvedValue(live)
+
+    await flow.loadAvailability()
+    expect(flow.availability.value).toBeNull()
+    await vi.advanceTimersByTimeAsync(delays[0] * 1000)
+    await vi.advanceTimersByTimeAsync(delays[1] * 1000)
+
+    expect(api.fetchAvailability).toHaveBeenCalledTimes(3)
+    expect(flow.availability.value).toEqual(live)
+    await vi.runAllTimersAsync()
+    expect(api.fetchAvailability).toHaveBeenCalledTimes(3) // stops once it succeeds
+  })
+
+  it('gives up after the last delay', async () => {
+    api.fetchAvailability.mockRejectedValue(new ApiError('network', 'down'))
+    await flow.loadAvailability()
+    await vi.runAllTimersAsync()
+    expect(api.fetchAvailability).toHaveBeenCalledTimes(delays.length + 1)
+    expect(flow.notice.value).toBeNull()
+  })
+
+  it('keeps the last good answer when a later refresh fails', async () => {
+    const live = { sold_out: false, sales_open: true }
+    await flow.loadAvailability()
+    api.fetchAvailability.mockResolvedValue(live)
+    await flow.loadAvailability()
+    api.fetchAvailability.mockRejectedValue(new ApiError('network', 'down'))
+    await flow.loadAvailability()
+    expect(flow.availability.value).toEqual(live)
+  })
+
+  it('runs one retry loop however many times it is called', async () => {
+    api.fetchAvailability.mockRejectedValue(new ApiError('network', 'down'))
+    await flow.loadAvailability()
+    await flow.loadAvailability()
+    api.fetchAvailability.mockClear()
+    await vi.advanceTimersByTimeAsync(delays[0] * 1000)
+    expect(api.fetchAvailability).toHaveBeenCalledTimes(1)
   })
 })
 

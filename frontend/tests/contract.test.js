@@ -25,10 +25,17 @@ describe('contract with the backend', () => {
     expect(MAX_GUESTS).toBe(contract.max_guests)
   })
 
-  it('bakes in the ladder the migrations seed', () => {
-    // Whole pesos here, cents in the contract. The baked ladder is what a visitor sees
-    // before /api/availability/ answers, so a stale one under-quotes the first second.
-    expect(bakedLadder()).toEqual(seeded)
+  it('bakes in a ladder the API could have sent', () => {
+    // The baked ladder follows the admin (flat or tiered), not the migrations, so it is
+    // checked for shape only: contiguous from seat 1, whole positive prices. Keeping
+    // its numbers current is a manual step -- see the comment on event.priceTiers.
+    const bands = bakedLadder()
+    expect(bands.length).toBeGreaterThan(0)
+    bands.forEach((band, i) => {
+      expect(band.fromSeat).toBe(i === 0 ? 1 : bands[i - 1].toSeat + 1)
+      expect(band.toSeat).toBeGreaterThanOrEqual(band.fromSeat)
+      expect(Number.isInteger(band.price) && band.price > 0).toBe(true)
+    })
   })
 
   it('formats pesos the way format_ars() does', () => {

@@ -12,8 +12,9 @@ import {
   whatsappLink,
 } from '../src/event.config.js'
 
-// The real ladder in the shape ladderFrom() produces: 1-50 at 5.000, 51-100 at 7.000,
-// 101-130 at 9.000.
+// The seeded three-step ladder in the shape ladderFrom() produces: 1-50 at 5.000,
+// 51-100 at 7.000, 101-130 at 9.000. A fixture, not the baked copy, which follows the
+// admin and may be a single flat band.
 const LADDER = [
   { fromSeat: 1, toSeat: 50, price: 5000 },
   { fromSeat: 51, toSeat: 100, price: 7000 },
@@ -35,7 +36,13 @@ describe('formatPesos', () => {
 
 describe('bakedLadder', () => {
   it('turns upTo thresholds into inclusive 1-based ranges', () => {
-    expect(bakedLadder()).toEqual(LADDER)
+    const saved = event.priceTiers
+    event.priceTiers = [{ upTo: 50, price: 5000 }, { upTo: 100, price: 7000 }, { upTo: 130, price: 9000 }]
+    try {
+      expect(bakedLadder()).toEqual(LADDER)
+    } finally {
+      event.priceTiers = saved
+    }
   })
 })
 
@@ -106,8 +113,8 @@ describe('quoteFor', () => {
   })
 
   it('falls back to the baked ladder when given none', () => {
-    expect(quoteFor(2, null, 1).total).toBe(10000)
-    expect(quoteFor(2, [], 100).total).toBe(16000)
+    expect(quoteFor(2, null, 1)).toEqual(quoteFor(2, bakedLadder(), 1))
+    expect(quoteFor(2, [], 30)).toEqual(quoteFor(2, bakedLadder(), 30))
   })
 
   it('defaults to the first seat', () => {

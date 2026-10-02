@@ -125,9 +125,20 @@ most:
   which can be cold for up to a minute, wakes up. `warmUp()` pings `/api/health/` on
   mount and discards the result, so the backend is waking up while the visitor is
   still reading.
+- **The page shows a baked-in price until the live one arrives, and keeps asking.**
+  `priceTiers` in `src/event.config.js` is a fallback copy of the current price, so
+  there is a figure on screen before the backend answers. Every price on the page
+  switches to `/api/availability/` once it responds. If that request fails, which
+  happens during a cold start, the page retries for about 90 seconds and keeps the
+  last good answer if a later refresh fails. It used to try once and give up, and a
+  visitor who opened the link while the backend was asleep saw the stale fallback for
+  as long as the tab stayed open. **When you change the price in the admin, update
+  `priceTiers` too** (one band at the flat price while tiered pricing is off), or the
+  first second on screen shows the old figure. The pay screen always charges the
+  server's quote, so a stale fallback can mislead but never overcharge.
 - **The frontend's copies of backend facts are tested against one shared file.** The
-  page has to show a price before the backend wakes, so it copies the price ladder,
-  the peso formatting, the guest cap and the quote arithmetic by hand, and reads a
+  page copies the peso formatting, the guest cap and the quote arithmetic by hand, and
+  checks them against the seeded price ladder, and it reads a
   fixed set of API fields and error codes. `contract/frontend_contract.json` holds
   those facts once. `tickets/test_contract.py` checks the backend still says them and
   `frontend/tests/contract.test.js` checks the frontend agrees, so a change on one side

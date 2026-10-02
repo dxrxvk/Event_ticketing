@@ -1440,3 +1440,85 @@ class ExportTests(TestCase):
             # The organiser export carries every coworker's phone number.
             self.assertEqual(response.status_code, 302, path)
             self.assertIn('/admin/login/', response['Location'])
+
+
+# Renders admin changelists, so the same manifest-storage escape as AdminAccessTests.
+@override_settings(STORAGES={
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+})
+class AdminConfirmActionTests(TestCase):
+    """Confirming for a buyer who transferred but never tapped confirm.
+
+    The action must behave exactly like the buyer's own button: it sets confirmed_at,
+    and an aged-out booking only gets its seats back if the room still has them. A bare
+    status write would do neither, and in a full event it oversells.
+    """
+
+    STALE = 60  # minutes; past the 45-minute TTL configure_event() sets
+
+    def setUp(self):
+        self.settings_row = configure_event()
+        User.objects.create_superuser('org', 'o@example.com', 'pw')
+        self.client.login(username='org', password='pw')
+
+    def run_action(self, action, *bookings):
+        return self.client.post('/admin/tickets/booking/', {
+            'action': action,
+            '_selected_action': [b.pk for b in bookings],
+        }, follow=True)
+
+    def fill_the_room(self):
+        make_booking(name='Full', quantity=CAPACITY, status=Booking.Status.SELF_CONFIRMED)
+
+    def test_fresh_pending_is_confirmed(self):
+        booking = make_booking()
+        self.run_action('mark_confirmed', booking)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.SELF_CONFIRMED)
+        self.assertIsNotNone(booking.confirmed_at)
+
+    def test_aged_out_pending_with_room_is_confirmed(self):
+        booking = make_booking(minutes_old=self.STALE)
+        self.run_action('mark_confirmed', booking)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.SELF_CONFIRMED)
+
+    def test_aged_out_pending_in_a_full_event_is_refused(self):
+        booking = make_booking(minutes_old=self.STALE)
+        self.fill_the_room()
+        response = self.run_action('mark_confirmed', booking)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.EXPIRED)
+        self.assertLessEqual(seats_taken(self.settings_row), CAPACITY)
+        self.assertContains(response, booking.reference)
+        self.assertContains(response, 'event is full')
+
+    def test_cancelled_is_left_alone(self):
+        booking = make_booking(status=Booking.Status.CANCELLED)
+        response = self.run_action('mark_confirmed', booking)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertContains(response, 'cancelled')
+
+    def test_verified_is_not_downgraded(self):
+        booking = make_booking(status=Booking.Status.VERIFIED)
+        self.run_action('mark_confirmed', booking)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.VERIFIED)
+
+    def test_mark_verified_cannot_oversell_a_full_event(self):
+        booking = make_booking(minutes_old=self.STALE)
+        self.fill_the_room()
+        self.run_action('mark_verified', booking)
+        booking.refresh_from_db()
+        self.assertNotEqual(booking.status, Booking.Status.VERIFIED)
+        self.assertLessEqual(seats_taken(self.settings_row), CAPACITY)
+
+    def test_mark_verified_on_a_forgotten_confirm_sets_confirmed_at(self):
+        booking = make_booking()
+        self.run_action('mark_verified', booking)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.VERIFIED)
+        self.assertIsNotNone(booking.confirmed_at)
+        self.assertEqual(booking.amount_received_cents, booking.total_amount)

@@ -175,17 +175,13 @@ describe('AvailabilityBadge', () => {
     expect(mount(AvailabilityBadge).html()).toBe('<!--v-if-->')
   })
 
-  it('shows seats left with the current price', () => {
+  it('shows the current price without a seat count', () => {
     const wrapper = mount(AvailabilityBadge, {
-      props: { availability: availability({ remaining: 80, current_price_display: '7.000' }) },
+      props: { availability: availability({ remaining: 3, current_price_display: '7.000' }) },
     })
-    expect(wrapper.text()).toBe('80 of 130 spots left · now 7.000')
+    expect(wrapper.text()).toBe('Tickets available · now 7.000')
+    expect(wrapper.text()).not.toMatch(/\d+ of \d+|left/)
     expect(wrapper.classes()).toContain('badge--open')
-  })
-
-  it('turns low at ten or fewer', () => {
-    const wrapper = mount(AvailabilityBadge, { props: { availability: availability({ remaining: 10 }) } })
-    expect(wrapper.classes()).toContain('badge--low')
   })
 
   it('says sold out and closed plainly', () => {

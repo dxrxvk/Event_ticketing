@@ -10,7 +10,6 @@ const props = defineProps({
 const tone = computed(() => {
   if (!props.availability) return 'idle'
   if (props.availability.sold_out) return 'gone'
-  if (props.availability.remaining <= 10) return 'low'
   return 'open'
 })
 
@@ -19,10 +18,10 @@ const label = computed(() => {
   if (!a) return ''
   if (a.sales_open === false) return 'Bookings closed'
   if (a.sold_out) return 'Sold out'
-  // The current price rides along with the count: scarcity and price move together
-  // here, and seeing both is what makes "book now" a reason rather than a nag.
-  const seats = `${a.remaining} of ${a.capacity} spots left`
-  return a.current_price_display ? `${seats} · now ${a.current_price_display}` : seats
+  // No seat count: the organiser chose not to show how many spots are left. The
+  // API still sends `remaining`, so the sold-out and closed states are unchanged.
+  const open = 'Tickets available'
+  return a.current_price_display ? `${open} · now ${a.current_price_display}` : open
 })
 </script>
 
@@ -50,6 +49,5 @@ const label = computed(() => {
 .badge__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 .badge--open { color: var(--success); background: var(--success-soft); border-color: transparent; }
-.badge--low { color: var(--accent-strong); background: var(--accent-soft); border-color: transparent; }
 .badge--gone { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
 </style>

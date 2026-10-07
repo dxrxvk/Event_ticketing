@@ -19,6 +19,39 @@ working in this repo: [`CLAUDE.md`](CLAUDE.md).
 Backend and frontend are separate deployments with no server-side rendering — the
 frontend must be readable before the backend (which sleeps after 15 min idle) wakes up.
 
+```
+Browser
+  └─ Vue SPA (static, Cloudflare)          always fast
+        └─ JSON over HTTPS
+             └─ Django + DRF API (Render)   sleeps when idle, ~50s cold start
+                  └─ Postgres (Neon)
+```
+
+## Project layout
+
+```
+tickets/                    Django app: all backend logic
+  models.py                 data + rules (EventSettings, Booking, Guest, PriceTier, SongRequest)
+  services.py               business operations: create_booking(), confirm_booking()
+  views.py                  HTTP in/out only; translates service exceptions to status codes
+  serializers.py            JSON shapes, incl. the one-shot pay screen payload
+  admin.py                  the back office: reconciliation, seat traffic light, actions
+  exports.py                venue CSV, organiser CSV, playlist text
+  money.py                  integer-cents formatting
+  tests.py, test_*.py       business rules, robustness, contract, settings
+config/                     Django project settings and URLs
+frontend/src/
+  App.vue                   picks the screen (form, pay, confirmed, sold out, closed)
+  composables/useBooking.js the whole booking flow and state
+  api.js                    fetch calls and error mapping
+  event.config.js           facts baked in so the page renders before any API call
+  components/               UI pieces
+  styles/tokens.css         every colour and font, in one file
+frontend/tests/             Vitest suite
+contract/                   facts the frontend and backend must both agree on
+scripts/loadtest.py         concurrent load test; fails on any 5xx or oversell
+```
+
 ## Live
 
 - Frontend: https://event-ticketing.dhruxk.workers.dev
@@ -73,6 +106,20 @@ Postgres. They must run against a **local** Postgres, not Neon — the
 burst tests make hundreds of sequential requests inside one transaction, and at
 ~190ms per round trip from Buenos Aires to Oregon a four-test class takes ten minutes
 and Neon drops the connection.
+
+## Booking lifecycle
+
+```
+pending ──buyer clicks "I've paid"──> self_confirmed ──organiser sees deposit──> verified
+   │
+   └─ older than pending_ttl_minutes: treated as expired at read time
+any status ──admin──> cancelled
+```
+
+`pending`, `self_confirmed` and `verified` hold seats. A `pending` booking stops holding
+its seat once it is older than the TTL. No job changes its status: the seat count
+filters on `created_at`, so the seat is free the moment the clock passes (see
+[Design decisions](#design-decisions)).
 
 ## API
 
@@ -200,3 +247,64 @@ SQLite proves nothing about correctness. The Postgres-only test classes exist fo
 reason and must be run against a real Postgres (`tickets/test_robustness.py`, plus a
 dedicated race class in `tickets/tests.py`, both driven with real threads, not
 `unittest.mock`).
+
+## Concepts worth reusing
+
+The general patterns behind the decisions above, written to carry over to other
+projects.
+
+**Data and correctness**
+
+1. **Money is integer cents.** Floats cannot represent 0.10 exactly, and rounding
+   errors add up across many bookings.
+2. **Never trust the client.** Derive what you can on the server: quantity is
+   `len(guests)`, never a number the browser sends.
+3. **Freeze a promise when you make it.** The quoted price is saved on the booking,
+   because the buyer has already typed it into their bank. Never recompute it.
+4. **State machines, not booleans.** "Says they paid" and "payment verified" are
+   different facts. A single `paid` flag would lose which one happened.
+5. **Public identifiers are unguessable.** `secrets.token_urlsafe`, never the
+   sequential primary key, so nobody can enumerate other people's bookings.
+
+**Concurrency**
+
+6. **Race conditions need a lock.** Two requests can both read "one seat left". A row
+   lock (`select_for_update()` inside `transaction.atomic()`) makes one request wait
+   and re-read the count.
+7. **Test on the database you run in production.** SQLite silently skips the lock, so
+   race tests only mean something on Postgres.
+8. **Compute derived state instead of storing it.** Expiry is a `WHERE` clause, not a
+   cron job. Nothing has to run for it to be true.
+9. **Ratchets.** Some values should only go up. The price follows the highest
+   occupancy ever reached, so cancellations cannot push it back down.
+
+**Architecture**
+
+10. **Thin views, fat services.** Business rules live in `services.py`, so tests can
+    run them without HTTP and there is one place to change them.
+11. **A consistent error contract.** Every conflict is `409 {"error": code}`, so the
+    frontend maps codes to messages instead of parsing text.
+12. **One source of truth per fact.** One method decides the price band; one JSON
+    file holds the facts both codebases copy.
+13. **Contract tests.** When two codebases depend on the same facts, a test on each
+    side checks them against one shared file.
+14. **Design for cold starts.** Static page first, a warm-up ping on load, retries,
+    and one response that carries everything the next screen needs.
+15. **Configuration in the database, not the code.** Bank alias, venue and price are
+    admin edits, not redeploys.
+
+**Security and operations**
+
+16. **Prove the rate limit fires.** A missing decorator once meant there was no limit
+    at all, and nothing raised an error. A test now sends one request past each limit.
+17. **CORS allows the exact frontend origin**, never `*`.
+18. **Collect and share as little personal data as possible.** Separate exports per
+    audience, and contact columns are deleted after reconciliation.
+19. **Regression tests.** Every bug that shipped gets a test that pins it
+    (`frontend/tests/regressions.test.js`).
+20. **Encoding is part of the output format.** CSVs are written `utf-8-sig` so Excel
+    shows accented letters correctly, and sorted on an accent-folded key.
+
+**Testing layers used here:** unit (pricing, formatting) → service (booking rules) →
+concurrency (real threads on Postgres) → hostile input (bursts, throttling) →
+contract (frontend and backend agree) → load script against a running server.

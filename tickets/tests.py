@@ -1403,6 +1403,10 @@ class ExportTests(TestCase):
         self.assertEqual(response.context['confirmed_count'], 2)
         self.assertEqual(response.context['pending_count'], 1)
 
+    def test_guest_changelist_links_to_exports(self):
+        response = self.client.get('/admin/tickets/guest/')
+        self.assertContains(response, 'href="/admin/tickets/booking/exports/"')
+
     def test_playlist_lists_confirmed_requests_once_each(self):
         paid = self._booking_with(['Paid Person'])
         other = self._booking_with(['Other Paid'], status=Booking.Status.VERIFIED)

@@ -1407,6 +1407,10 @@ class ExportTests(TestCase):
         response = self.client.get('/admin/tickets/guest/')
         self.assertContains(response, 'href="/admin/tickets/booking/exports/"')
 
+    def test_song_request_changelist_links_to_playlist(self):
+        response = self.client.get('/admin/tickets/songrequest/')
+        self.assertContains(response, 'href="/admin/tickets/booking/exports/playlist.txt"')
+
     def test_playlist_lists_confirmed_requests_once_each(self):
         paid = self._booking_with(['Paid Person'])
         other = self._booking_with(['Other Paid'], status=Booking.Status.VERIFIED)

@@ -1,0 +1,6 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+  <li><a href="{% url 'admin:tickets_export_playlist_txt' %}" class="addlink">Export playlist</a></li>
+  {{ block.super }}
+{% endblock %}

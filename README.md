@@ -1,6 +1,6 @@
-# Multiculture Mixer — Ticketing
+# Haunted Halloween — Ticketing
 
-A single-event ticketing site for a private party (coworkers, Buenos Aires, 9 Oct 2026).
+A single-event ticketing site for a private party (coworkers, Buenos Aires, Haunted Halloween, 31 Oct 2026).
 No payment provider: buyers transfer to a personal bank alias and self-confirm on the
 site. The system tracks headcount against a guest-list cap and exports CSVs for the
 venue and the organiser.
@@ -54,7 +54,7 @@ scripts/loadtest.py         concurrent load test; fails on any 5xx or oversell
 
 ## Live
 
-- Frontend: https://event-ticketing.dhruxk.workers.dev
+- Frontend: https://haunted-halloween.dhruxk.workers.dev
 - Backend API: https://tickets-6cko.onrender.com
 
 ## Setup

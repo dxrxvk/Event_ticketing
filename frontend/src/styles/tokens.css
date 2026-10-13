@@ -9,31 +9,31 @@
    --yellow). If the next poster turns out teal, a variable called --magenta holding a
    teal value is a lie that outlives everyone who remembers why.
 
-   CURRENT: "Multiculture Mixer". The poster is hot magenta on yellow paper, but the
-   page stays on the dark base: the poster sits in it like a print on a black wall,
-   and its yellow (#F8D839, sampled off the file) does all the accent work. Yellow on
-   near-black is ~13:1 both as text and as a fill, so --accent and --accent-strong hold
-   the same value here; the split exists because a light palette needs two. The
-   poster's magenta (#FF007A) is ~4.5:1 on this background, fine for a headline and
-   marginal for anything small, so it is not used for text.
+   CURRENT: "Haunted Halloween". The poster is cream type and a red moon on textured
+   near-black, so the page takes its base straight off the paper (#111111, sampled)
+   and the moon (#DB6B66, sampled) does the accent work. The red is 5.7:1 on the
+   base, fine as a fill and for large text; --accent-strong is a lighter step of it
+   (7.1:1) for small accent text. --ink is the poster's cream, not pure white.
+   --danger stays its own coral: it is close to the accent in hue, so error states
+   must keep carrying their text and soft background, never colour alone.
 
    Every pair below is measured, not eyeballed. If you change one, re-measure.
    ============================================================================ */
 
 :root {
   /* ---- COLOUR (swap these) ------------------------------------------------ */
-  --bg: #0d0c0f;
-  --surface: #17161b;           /* cards */
-  --surface-raised: #1f1e25;    /* inputs, sitting on a card */
+  --bg: #111111;                /* poster paper */
+  --surface: #1a1a1a;           /* cards */
+  --surface-raised: #232323;    /* inputs, sitting on a card */
 
-  --ink: #f4f1ea;               /* 17:1 on bg */
-  --ink-muted: #a5a1ad;         /*  7.6:1 on bg */
-  --ink-faint: #6f6b78;         /*  3.8:1 on bg -- eyebrows and hints only, never body */
+  --ink: #ece9d8;               /* poster cream, 15.5:1 on bg */
+  --ink-muted: #a8a597;         /*  7.6:1 on bg */
+  --ink-faint: #73705f;         /*  3.8:1 on bg -- eyebrows and hints only, never body */
 
-  --accent: #F8D839;            /* poster yellow, 13:1 on bg */
-  --accent-ink: #14100A;        /* text placed ON --accent, 13.4:1 */
-  --accent-strong: #F8D839;     /* accent used as TEXT; same value on a dark base */
-  --accent-soft: rgba(248, 216, 57, 0.14);
+  --accent: #DB6B66;            /* poster moon, 5.7:1 on bg */
+  --accent-ink: #111111;        /* text placed ON --accent, 5.7:1 */
+  --accent-strong: #E8817C;     /* accent used as small TEXT, 7.1:1 on bg */
+  --accent-soft: rgba(219, 107, 102, 0.14);
 
   --line: rgba(255, 255, 255, 0.10);
   --line-strong: rgba(255, 255, 255, 0.18);

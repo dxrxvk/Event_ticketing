@@ -16,9 +16,11 @@ Docker/Celery/Redis, no buyer accounts). Don't add those.
 ## Current state
 
 Backend is deployed on Render at `tickets-6cko.onrender.com` against Neon Postgres; the
-frontend is deployed at `https://event-ticketing.dhruxk.workers.dev`. The page carries the
-real event details and poster ("Multiculture Mixer", 9 Oct 2026); the start time in
-`event.config.js` is a placeholder until confirmed.
+frontend is deployed at `https://haunted-halloween.dhruxk.workers.dev`. The page carries the
+real event details and poster ("Haunted Halloween", 31 Oct 2026, Valentín Virasoro 814,
+Caballito). It replaced the cancelled "Multiculture Mixer" (9 Oct) on the same backend and
+database: that event's bookings carried over as Halloween tickets with no migration, at
+the price they were frozen at. The start time comes from the admin's `event_date` only.
 
 - **Backend done:** models + migrations (incl. the seeded `EventSettings` singleton),
   admin for all three models, the four API endpoints, the venue and organiser exports,
@@ -67,14 +69,16 @@ real event details and poster ("Multiculture Mixer", 9 Oct 2026); the start time
   `DATABASE_URL` blank still gives SQLite for a fresh clone: `settings.py` strips it and
   treats empty as unset, because `dj_database_url.config()` only defaults when the
   variable is absent and a `DATABASE_URL=` line sets it to `''`.
-- **Frontend deployed** as a Cloudflare Worker with static assets (`event-ticketing`),
+- **Frontend deployed** as a Cloudflare Worker with static assets (`haunted-halloween`, renamed from
+  `event-ticketing` for the Halloween event, so the old URL no longer serves),
   Git-connected to `main`: root directory `frontend`, build `npm run build`, output
   `dist`, build-time env `VITE_API_BASE=https://tickets-6cko.onrender.com`. With the root
   directory unset the build finds `pyproject.toml`, runs `uv sync` and deploys nothing.
 - `main.py` is an unused leftover from `uv init`.
-- **CORS is already set** on Render: `CORS_ALLOWED_ORIGINS` =
-  `https://event-ticketing.dhruxk.workers.dev`. A preflight from that origin comes back
-  with a matching `Access-Control-Allow-Origin`, so the API is reachable from the Worker.
+- **CORS** on Render: `CORS_ALLOWED_ORIGINS` must be
+  `https://haunted-halloween.dhruxk.workers.dev`. A preflight from that origin should come
+  back with a matching `Access-Control-Allow-Origin`; if it does not, every API call from
+  the page fails.
 - **Still to do (pricing).** Migration `0004` seeds the two `PriceTier` rows (50 →
   7.000, 100 → 9.000) **and raises `capacity` to 130**, because the ladder only
   describes a 130-seat event. It raises capacity, never lowers it. Seeding the tiers

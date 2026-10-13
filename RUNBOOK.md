@@ -2,7 +2,7 @@
 
 The organiser's checklist for running ticket sales by hand. Everything here happens in
 the Django admin at `https://tickets-6cko.onrender.com/admin/` unless it says otherwise.
-The public page is `https://event-ticketing.dhruxk.workers.dev`.
+The public page is `https://haunted-halloween.dhruxk.workers.dev`.
 
 ## The day before
 
@@ -12,7 +12,7 @@ The public page is `https://event-ticketing.dhruxk.workers.dev`.
 - If you want Revolut on the pay screen, fill **all three** fields in *Event settings →
   Revolut*: tag, currency, price in minor units (`500` = 5.00). The card stays hidden
   until all three are set.
-- Send yourself `https://event-ticketing.dhruxk.workers.dev/?v=2` on WhatsApp and check
+- Send yourself `https://haunted-halloween.dhruxk.workers.dev/?v=2` on WhatsApp and check
   the preview card (title, text, poster crop). Use the `?v=2` the first time; WhatsApp
   caches previews hard.
 

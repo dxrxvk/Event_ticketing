@@ -12,22 +12,21 @@
 export const TIMEZONE = 'America/Argentina/Buenos_Aires'
 
 export const event = {
-  name: 'Multiculture Mixer',
-  tagline: 'A night of global genres, sounds and vibes. Rep your flag, share your culture, make new friends.',
+  name: 'Haunted Halloween',
+  tagline: 'The best Halloween party in BA. Costumes encouraged.',
 
-  // DATE ONLY, deliberately. 09/10 off the poster, read day-first: 9 October 2026. The
-  // poster states no time and none has been decided, so no time is baked in -- a
-  // made-up "21:00" here would be read as fact by the first person to open the link.
-  // The real start time comes from the admin's `event_date` via /api/availability/
-  // and overwrites this the moment it answers; until then the page says "TBD".
-  dateISO: '2026-10-09',
+  // DATE ONLY, deliberately. 31.10.2026 off the poster. The poster's 23:00 start is
+  // not baked in: the real start time comes from the admin's `event_date` via
+  // /api/availability/ and overwrites this the moment it answers, so the hour lives in
+  // one place. Until then the page says "TBD" for the time rather than a copy that can
+  // drift from the admin.
+  dateISO: '2026-10-31',
 
-  // The venue is still being decided, so this is what the page shows until the
-  // organiser types one into the admin. It comes from /api/availability/ and
-  // overwrites this on arrival -- like the alias and CVU, an edit must not need a
-  // redeploy. Blank hides the area line entirely.
-  venue: 'TBD',
-  venueArea: '',
+  // Off the poster. Shown until /api/availability/ answers, which overwrites it with
+  // the admin's venue -- like the alias and CVU, an edit must not need a redeploy.
+  // Blank hides the area line entirely.
+  venue: 'Valentín Virasoro 814',
+  venueArea: 'Caballito',
 
   // Display only, and only until /api/availability/ answers with the real ladder --
   // the API is the single source of truth for money, and an admin edit must not need a
@@ -39,12 +38,12 @@ export const event = {
   // when it is on, the PriceTier rows. A stale copy shows wrong prices until the API
   // answers, which on a cold start is up to a minute.
   priceTiers: [
-    { upTo: 60, price: 8000 },
+    { upTo: 120, price: 8000 },
   ],
 
   // '' means no poster panel renders and the hero stands on its own -- the page is
   // designed to look finished without it.
-  // public/poster.webp is the 6.1MB source PNG at 1000px wide, ~145KB. The separate
+  // public/poster.webp is the source JPG at its native 791px wide (not upscaled), ~175KB. The separate
   // public/og.jpg is the WhatsApp preview crop and is referenced from index.html only.
   posterUrl: '/poster.webp',
 
@@ -70,8 +69,8 @@ const timeFormatter = new Intl.DateTimeFormat('en-GB', {
  * it -- never a guessed hour.
  *
  * The baked fallback is date-only. It is parsed at midday in the event's own offset
- * on purpose: `new Date('2026-10-09')` is UTC midnight, which in Buenos Aires (-03:00)
- * is still the evening of the 8th, and the page would name the wrong day. Argentina
+ * on purpose: `new Date('2026-10-31')` is UTC midnight, which in Buenos Aires (-03:00)
+ * is still the evening of the 30th, and the page would name the wrong day. Argentina
  * has no DST, so the fixed offset is safe.
  */
 export function eventDateParts(availability = null) {

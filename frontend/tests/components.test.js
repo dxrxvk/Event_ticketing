@@ -323,10 +323,10 @@ describe('ConfirmedPanel', () => {
     ...overrides,
   })
 
-  it('says TBD for the time and venue until the admin sets them', () => {
+  it('says TBD for the time and shows the baked venue until the admin sets them', () => {
     const wrapper = mount(ConfirmedPanel, { props: props() })
     expect(wrapper.text()).toContain('2 spots are reserved')
-    expect(wrapper.text()).toContain('Friday 9 October, time TBD')
+    expect(wrapper.text()).toContain('Saturday 31 October, time TBD')
     expect(wrapper.text()).toContain(event.venue)
   })
 

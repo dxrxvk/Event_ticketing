@@ -246,6 +246,15 @@ describe('CopyField', () => {
 })
 
 describe('PayPanel', () => {
+  it('offers cash in person through the same confirm, so the seat is held', async () => {
+    const wrapper = mount(PayPanel, { props: { booking: booking() } })
+    const cash = wrapper.findAll('button').find((b) => b.text() === "I'll pay cash in person")
+    expect(cash).toBeTruthy()
+    expect(wrapper.get('.cash').text()).toContain('5.000')
+    await cash.trigger('click')
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+  })
+
   it('shows the server amount and the payment destination', () => {
     const wrapper = mount(PayPanel, { props: { booking: booking() } })
     expect(wrapper.get('.amount__value').text()).toBe('5.000')

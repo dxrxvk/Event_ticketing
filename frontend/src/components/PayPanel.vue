@@ -116,6 +116,22 @@ const limitHelpLink = computed(() => {
       Bank blocking it on a transfer limit?
       <a :href="limitHelpLink" target="_blank" rel="noopener">Message the organiser</a>.
     </p>
+
+    <!--
+      Cash goes through the same confirm call as a transfer. A booking left pending
+      lapses after the TTL and frees its seat, so "reserve and find me later" would
+      quietly lose the spot; self_confirmed holds it, and the organiser verifies by
+      hand on receiving the cash exactly as they do against a bank statement.
+    -->
+    <div class="cash stack">
+      <p class="field-hint">
+        Only have cash? Tap below to hold your spot, then find the organiser in person
+        and pay <strong>{{ booking.amount_display }}</strong>.
+      </p>
+      <AppButton variant="ghost" :disabled="confirming" @click="$emit('confirm')">
+        I'll pay cash in person
+      </AppButton>
+    </div>
   </section>
 </template>
 
@@ -164,6 +180,11 @@ const limitHelpLink = computed(() => {
   margin-top: var(--space-3);
   font-size: var(--text-base);
   color: var(--ink-muted);
+}
+
+.cash {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line);
 }
 
 .holder {

@@ -164,6 +164,10 @@ function onSubmit() {
       {{ submitting ? 'Reserving…' : 'Reserve' }}
     </AppButton>
 
+    <p class="field-hint">
+      Only have cash? Tap Reserve anyway and choose cash on the next screen.
+    </p>
+
     <p v-if="event.listDeadlineNote" class="field-hint form__deadline">
       {{ event.listDeadlineNote }}
     </p>
